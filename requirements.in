@@ -1,0 +1,21 @@
+-e file:.
+black
+ipywidgets
+isoweek
+jaxopt@git+https://github.com/google/jaxopt  # https://github.com/google/jaxopt/issues/571
+jupyterlab
+jupytext
+line_profiler
+localscope
+matplotlib
+optax
+pandas
+protobuf<5  # https://github.com/tensorflow/tensorboard/issues/6808
+pytest
+pytest-cov
+scikit-learn
+snakeviz
+sphinx
+sphinx-book-theme
+tensorboard
+tensorboardx

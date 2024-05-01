@@ -1,0 +1,25 @@
+[project]
+name = "avb"
+version = "0.1.0"
+dependencies = [
+    "jax-ifnt@git+https://github.com/tillahoffmann/ifnt",
+    "jax",
+    "jaxlib",
+    "numpyro@git+https://github.com/pyro-ppl/numpyro",
+]
+readme = "README.rst"
+description = "Variational inference using analytic evidence lower bounds."
+
+[tool.setuptools.packages]
+find = {}
+
+# https://coverage.readthedocs.io/en/latest/config.html
+[tool.coverage.run]
+source = [
+    "avb",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    "raise NotImplementedError",
+]
