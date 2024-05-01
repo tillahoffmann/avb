@@ -74,6 +74,9 @@ class Node:
     def __matmul__(self, other) -> Self:
         return Operator(operator.matmul, self, other)
 
+    def __add__(self, other) -> Self:
+        return Operator(operator.add, self, other)
+
 
 class LazySample(Node):
     def __init__(self, distribution: LazyDistribution, *args, **kwargs) -> None:

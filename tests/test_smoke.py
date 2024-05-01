@@ -16,9 +16,10 @@ def model(use_lazy_distribution, n, p) -> None:
         new = lambda cls, *args, **kwargs: cls(*args, **kwargs)  # noqa: E731
 
     X = numpyro.sample("X", new(PrecisionNormal, jnp.zeros((n, p)), 1))
+    intercept = numpyro.sample("intercept", new(PrecisionNormal, 0, 1))
     coef = numpyro.sample("coef", new(PrecisionNormal, jnp.zeros(p), 1))
     tau = numpyro.sample("tau", new(distributions.Gamma, 4, 1))
-    y_hat = X @ coef
+    y_hat = intercept + X @ coef
     numpyro.sample("y", new(PrecisionNormal, y_hat, tau))
 
 
@@ -53,6 +54,7 @@ def test_smoke() -> None:
     approximation = sample | {
         "tau": distributions.Gamma(4, 3),
         "coef": PrecisionNormal(jnp.asarray([-0.2, 0.3]), jnp.asarray([0.9, 1.1])),
+        "intercept": PrecisionNormal(0.4, 1.4),
     }
     substitutions = {
         lazy_trace[key]["value"]: value for key, value in approximation.items()

@@ -1,22 +1,28 @@
 import functools
+import inspect
 from jax import numpy as jnp
 from jax.scipy.special import digamma
 from numpyro import distributions
 import operator
-from typing import Any
-from .dispatch import reraise_not_implemented_with_args, valuedispatch
-from .nodes import Operator
+from typing import Any, Callable
+from .dispatch import valuedispatch
+from .nodes import LazySample, Operator
 
 
 def apply_substitutions(func):
     """
     Substitute arguments and keyword arguments with concrete values where available.
     """
-    from .nodes import LazySample
+
+    signature = inspect.signature(func)
+    param = signature.parameters.get("substitutions")
+    assert (
+        param and param.kind == param.KEYWORD_ONLY
+    ), f"`{func}` must have a keyword-only argument `substitutions`."
 
     @functools.wraps(func)
     def _apply_substitutions_wrapper(*args, **kwargs):
-        substitutions = kwargs.pop("substitutions", {})
+        substitutions = kwargs.get("substitutions", {})
         args = [
             substitutions[arg] if isinstance(arg, LazySample) else arg for arg in args
         ]
@@ -24,13 +30,12 @@ def apply_substitutions(func):
             key: substitutions[arg] if isinstance(arg, LazySample) else arg
             for key, arg in kwargs.items()
         }
-        return func(*args, **kwargs, substitutions=substitutions)
+        return func(*args, **kwargs)
 
     return _apply_substitutions_wrapper
 
 
 @functools.singledispatch
-@reraise_not_implemented_with_args
 def expect(self: Any, expr: Any = 1, *, substitutions=None) -> jnp.ndarray:
     raise NotImplementedError
 
@@ -44,6 +49,8 @@ def _expect_distribution(
         return self.mean
     elif expr == 2:
         return jnp.square(self.mean) + self.variance
+    elif expr == "var":
+        return self.variance
     else:
         raise NotImplementedError
 
@@ -63,7 +70,7 @@ def _expect_gamma(
 @expect.register(int)
 @expect.register(float)
 @apply_substitutions
-def _expect_literal(self, expr=1, substitutions=None):
+def _expect_literal(self, expr=1, *, substitutions=None):
     if expr == 1:
         return self
     elif expr == 2:
@@ -75,43 +82,62 @@ def _expect_literal(self, expr=1, substitutions=None):
 
 
 @expect.register
-@apply_substitutions
-def _expect_operator(self: Operator, expr: Any = 1, substitutions=None) -> jnp.ndarray:
+def _expect_operator(
+    self: Operator, expr: Any = 1, *, substitutions=None
+) -> jnp.ndarray:
     # Dispatch from an operator instance to the specific operation we're evaluating.
-    return _expect_operator_unpacked(
-        self.operation, expr, *self.args, **self.kwargs, substitutions=substitutions
+    return _expect_unpacked_operator(
+        self.operation,
+        *self.args,
+        **self.kwargs,
+        expr=expr,
+        substitutions=substitutions,
     )
 
 
 @valuedispatch
-@reraise_not_implemented_with_args
-def _expect_operator_unpacked(
-    _, operator: Operator, expr: Any = 1, substitutions=None
+def _expect_unpacked_operator(
+    operation: Callable, *args, expr: Any, substitutions=None, **kwargs
 ) -> jnp.ndarray:
     raise NotImplementedError
 
 
-@_expect_operator_unpacked.register(operator.matmul)
-@reraise_not_implemented_with_args
+@_expect_unpacked_operator.register(operator.matmul)
 @apply_substitutions
 def _expect_operation_matmul(
-    matmul, expr, *args, substitutions, **kwargs
+    operation, a, b, expr, *, substitutions=None
 ) -> jnp.ndarray:
-    sexpect = functools.partial(expect, substitutions=substitutions)
-    # args = [substitutions[arg] for arg in operator.args]
+    subexpect = functools.partial(expect, substitutions=substitutions)
     if expr == 1:
-        args = [sexpect(arg) for arg in args]
-        return functools.reduce(matmul, args[1:], args[0])
+        return subexpect(a) @ subexpect(b)
     elif expr == 2:
-        # TODO: implement this more generally. We currently only support fixed design
-        # matrix on the left and stochastic vector on the right. Batching isn't
+        # TODO: implement this more generally. We currently only support a fixed design
+        # matrix `a` on the left and stochastic vector `b` on the right. Batching isn't
         # supported.
-        assert len(args) == 2
-        design, coef = args
-        assert isinstance(design, jnp.ndarray)
-        assert isinstance(coef, jnp.ndarray) or (
-            isinstance(coef, distributions.Distribution) and coef.event_dim == 0
+        assert isinstance(a, jnp.ndarray)
+        assert isinstance(b, jnp.ndarray) or (
+            isinstance(b, distributions.Distribution) and b.event_dim == 0
         )
-        return jnp.square(design) @ sexpect(coef, 2)
+        return jnp.square(a) @ subexpect(b, 2)
+    elif expr == "var":
+        return jnp.square(a) @ subexpect(b, 2) - jnp.square(subexpect(a) @ subexpect(b))
+    else:
+        raise NotImplementedError
+
+
+@_expect_unpacked_operator.register(operator.add)
+@apply_substitutions
+def _expect_unpacked_operation_add(
+    operation, *args, expr, substitutions=None
+) -> jnp.ndarray:
+    subexpect = functools.partial(expect, substitutions=substitutions)
+    if expr == 1:
+        return sum(subexpect(arg) for arg in args)
+    elif expr == 2:
+        return jnp.square(sum(subexpect(arg) for arg in args)) + sum(
+            subexpect(arg, expr="var") for arg in args
+        )
+    elif expr == "var":
+        return sum(subexpect(arg, expr="var") for arg in args)
     else:
         raise NotImplementedError
