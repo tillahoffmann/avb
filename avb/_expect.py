@@ -2,8 +2,10 @@ import functools
 from jax import numpy as jnp
 from jax.scipy.special import digamma
 from numpyro import distributions
+import operator
 from typing import Any
-from .dispatch import reraise_not_implemented_with_args
+from .dispatch import reraise_not_implemented_with_args, valuedispatch
+from .nodes import Operator
 
 
 def apply_substitutions(func):
@@ -68,5 +70,48 @@ def _expect_literal(self, expr=1, substitutions=None):
         return jnp.square(self)
     elif expr == "log":
         return jnp.log(self)
+    else:
+        raise NotImplementedError
+
+
+@expect.register
+@apply_substitutions
+def _expect_operator(self: Operator, expr: Any = 1, substitutions=None) -> jnp.ndarray:
+    # Dispatch from an operator instance to the specific operation we're evaluating.
+    return _expect_operator_unpacked(
+        self.operation, expr, *self.args, **self.kwargs, substitutions=substitutions
+    )
+
+
+@valuedispatch
+@reraise_not_implemented_with_args
+def _expect_operator_unpacked(
+    _, operator: Operator, expr: Any = 1, substitutions=None
+) -> jnp.ndarray:
+    raise NotImplementedError
+
+
+@_expect_operator_unpacked.register(operator.matmul)
+@reraise_not_implemented_with_args
+@apply_substitutions
+def _expect_operation_matmul(
+    matmul, expr, *args, substitutions, **kwargs
+) -> jnp.ndarray:
+    sexpect = functools.partial(expect, substitutions=substitutions)
+    # args = [substitutions[arg] for arg in operator.args]
+    if expr == 1:
+        args = [sexpect(arg) for arg in args]
+        return functools.reduce(matmul, args[1:], args[0])
+    elif expr == 2:
+        # TODO: implement this more generally. We currently only support fixed design
+        # matrix on the left and stochastic vector on the right. Batching isn't
+        # supported.
+        assert len(args) == 2
+        design, coef = args
+        assert isinstance(design, jnp.ndarray)
+        assert isinstance(coef, jnp.ndarray) or (
+            isinstance(coef, distributions.Distribution) and coef.event_dim == 0
+        )
+        return jnp.square(design) @ sexpect(coef, 2)
     else:
         raise NotImplementedError
