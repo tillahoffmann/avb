@@ -1,6 +1,9 @@
 __pycache__
 .DS_Store
+.ipynb_checkpoints
 .vscode
 *.egg-info
+*.ipynb
 dist
 docs/_build
+playground
