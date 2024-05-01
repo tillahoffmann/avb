@@ -41,7 +41,6 @@ def expect(self: Any, expr: Any = 1, *, substitutions=None) -> jnp.ndarray:
 
 
 @expect.register
-@apply_substitutions
 def _expect_distribution(
     self: distributions.Distribution, expr: Any = 1, *, substitutions=None
 ) -> jnp.ndarray:
@@ -56,20 +55,18 @@ def _expect_distribution(
 
 
 @expect.register
-@apply_substitutions
 def _expect_gamma(
     self: distributions.Gamma, expr: Any = 1, *, substitutions=None
 ) -> jnp.ndarray:
     if expr == "log":
         return digamma(self.concentration) - jnp.log(self.rate)
     else:
-        return _expect_distribution(self, expr, substitutions=substitutions)
+        return _expect_distribution(self, expr)
 
 
 @expect.register(jnp.ndarray)
 @expect.register(int)
 @expect.register(float)
-@apply_substitutions
 def _expect_literal(self, expr=1, *, substitutions=None):
     if expr == 1:
         return self
