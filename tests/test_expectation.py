@@ -94,6 +94,10 @@ def test_expect(distribution: distributions.Distribution, expr: Any) -> None:
                 "precision": distributions.Gamma(7.5, 9),
             },
         ),
+        (
+            distributions.Wishart,
+            {"concentration": 7, "rate_matrix": distributions.Wishart(20, jnp.eye(3))},
+        ),
     ],
 )
 def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) -> None:
