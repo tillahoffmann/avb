@@ -7,6 +7,9 @@ import pytest
 from typing import Any, Type
 
 
+rng = ifnt.random.JaxRandomState(9)
+
+
 @pytest.mark.parametrize(
     "distribution, expr",
     [
@@ -31,6 +34,24 @@ from typing import Any, Type
             ),
             2,
         ),
+        (
+            avb.nodes.Operator(
+                operator.getitem,
+                avb.distributions.PrecisionNormal(
+                    rng.normal((11,)), rng.gamma(10, (11,)) / 10
+                ),
+                (Ellipsis, 2 * jnp.arange(5)),
+            ),
+            2,
+        ),
+        (
+            avb.nodes.Operator(
+                operator.getitem,
+                distributions.Gamma(rng.gamma(10, (11,)) / 10),
+                (Ellipsis, 2 * jnp.arange(5)),
+            ),
+            "log",
+        ),
     ],
 )
 def test_expect(distribution: distributions.Distribution, expr: Any) -> None:
@@ -43,7 +64,14 @@ def test_expect(distribution: distributions.Distribution, expr: Any) -> None:
     n_samples = 1000
     if isinstance(distribution, avb.nodes.Operator):
         x = distribution.operator(
-            *(arg.sample(rng.get_key(), (n_samples,)) for arg in distribution.args)
+            *(
+                (
+                    arg.sample(rng.get_key(), (n_samples,))
+                    if isinstance(arg, distributions.Distribution)
+                    else arg
+                )
+                for arg in distribution.args
+            )
         )
     else:
         x = distribution.sample(rng.get_key(), (n_samples,))

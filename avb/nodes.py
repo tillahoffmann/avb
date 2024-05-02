@@ -52,6 +52,9 @@ class Node:
     def __add__(self, other):
         return Operator(operator.add, self, other)
 
+    def __getitem__(self, other):
+        return Operator(operator.getitem, self, other)
+
 
 class Operator(Node):
     def __init__(self, operator, *args, **kwargs):

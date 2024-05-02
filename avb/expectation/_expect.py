@@ -94,3 +94,9 @@ def _expect_operator_add(self: Operator, expr: Any = 1) -> jnp.ndarray:
         return sum(expect(arg, expr="var") for arg in self.args)
     else:
         raise NotImplementedError
+
+
+@_expect_operator.register(operator.getitem)
+def _expect_operator_getitem(self: Operator, expr: Any = 1) -> jnp.ndarray:
+    arg, key = self.args
+    return expect(arg, expr)[key]
