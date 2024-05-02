@@ -5,7 +5,7 @@ dependencies = [
     "jax-ifnt@git+https://github.com/tillahoffmann/ifnt",
     "jax",
     "jaxlib",
-    "numpyro@git+https://github.com/pyro-ppl/numpyro",
+    "numpyro@git+https://github.com/tillahoffmann/numpyro@wishart",
 ]
 readme = "README.rst"
 description = "Variational inference using analytic evidence lower bounds."

@@ -272,7 +272,7 @@ numpy==1.26.4
     #   scipy
     #   tensorboard
     #   tensorboardx
-numpyro @ git+https://github.com/pyro-ppl/numpyro
+numpyro @ git+https://github.com/tillahoffmann/numpyro@wishart
     # via avb
 opt-einsum==3.3.0
     # via jax
@@ -469,7 +469,7 @@ tornado==6.4
     #   jupyterlab
     #   snakeviz
     #   terminado
-tqdm==4.66.2
+tqdm==4.66.3
     # via numpyro
 traitlets==5.14.3
     # via
