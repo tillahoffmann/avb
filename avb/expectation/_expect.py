@@ -4,8 +4,8 @@ from jax.scipy.special import digamma
 from numpyro import distributions
 import operator
 from typing import Any
-from .dispatch import valuedispatch
-from .nodes import DelayedValue, Operator
+from ..dispatch import valuedispatch
+from ..nodes import DelayedValue, Operator
 
 
 @functools.singledispatch

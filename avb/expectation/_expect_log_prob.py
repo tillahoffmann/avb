@@ -2,8 +2,8 @@ from jax import numpy as jnp
 from jax.scipy.special import gammaln
 from numpyro import distributions
 from ._expect import expect
-from . import dispatch
-from .distributions import PrecisionNormal
+from .. import dispatch
+from ..distributions import PrecisionNormal
 
 
 @dispatch.classdispatch
