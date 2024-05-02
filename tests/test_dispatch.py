@@ -43,3 +43,16 @@ def test_valuedispatch() -> None:
     assert do(None) == "base"
     assert do("a") == "hello"
     assert do(1) == "world"
+
+
+def test_valuedispatch_with_key() -> None:
+    @dispatch.valuedispatch(key=lambda x: 2 * x)
+    def do(x):
+        return "base"
+
+    do.register("aa", lambda x: "hello")
+    do.register(4, lambda x: "world")
+
+    assert do("a") == "hello"
+    assert do("aa") == "base"
+    assert do(2) == "world"

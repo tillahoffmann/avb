@@ -15,17 +15,20 @@ def classdispatch(func):
     return _classdispatch_wrapper
 
 
-def valuedispatch(func):
+def valuedispatch(func=None, *, key=None):
     """
     Dispatch on a hashable value.
     """
+
+    if func is None:
+        return functools.partial(valuedispatch, key=key)
 
     registry = {}
 
     @functools.wraps(func)
     def _valuedispatch_wrapper(value, *args, **kwargs):
         try:
-            impl = registry[value]
+            impl = registry[value if key is None else key(value)]
         except KeyError:
             impl = func
         return impl(value, *args, **kwargs)
