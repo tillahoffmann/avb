@@ -7,7 +7,6 @@ from ..distributions import PrecisionNormal
 
 
 @dispatch.classdispatch
-@dispatch.reraise_not_implemented_with_args
 def expect_log_prob(cls, value, *args, **kwargs) -> jnp.ndarray:
     raise NotImplementedError
 
