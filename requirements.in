@@ -2,6 +2,7 @@
 black
 ipywidgets
 isoweek
+jax-ifnt
 jaxopt@git+https://github.com/google/jaxopt  # https://github.com/google/jaxopt/issues/571
 jupyterlab
 jupytext
