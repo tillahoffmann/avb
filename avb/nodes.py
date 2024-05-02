@@ -1,14 +1,14 @@
-import contextlib
+from jax import numpy as jnp
+from numpyro.handlers import Messenger
 from numpyro import distributions
 import operator
-from typing import Callable, Generic, Type, TypeVar
-from typing_extensions import Self
+from typing import Generic, Type, TypeVar
 
 
 def _monkeypatched_instancecheck(cls, instance):
     # For LazyDistribution(cls, ...), this behaves exactly as if we'd passed in an
     # instance of cls.
-    if isinstance(instance, LazyDistribution):
+    if isinstance(instance, DelayedDistribution):
         return issubclass(instance.cls, cls)
     return type.__instancecheck__(cls, instance)
 
@@ -24,67 +24,66 @@ del DistributionMeta
 D = TypeVar("D", bound=distributions.Distribution)
 
 
-class LazyDistribution(Generic[D]):
-
-    LAZY = False
+class DelayedDistribution(Generic[D]):
 
     def __init__(self, cls: Type[D], *args, **kwargs) -> None:
         self.cls = cls
         self.args = args
         self.kwargs = kwargs
+        self._instance = None
 
     def __call__(self, *args, **kwargs):
-        if self.LAZY:
-            sample = LazySample(self, *args, **kwargs)
-            if kwargs.get("sample_intermediates"):
-                return sample, []
-            return sample
-        else:
-            return self.instance(*args, **kwargs)
+        return self.instance(*args, **kwargs)
 
     @property
     def instance(self) -> D:
-        args = [
-            arg.instance if isinstance(arg, LazyDistribution) else arg
-            for arg in self.args
-        ]
-        kwargs = {
-            key: arg.instance if isinstance(arg, LazyDistribution) else arg
-            for key, arg in self.kwargs.items()
-        }
-        return self.cls(*args, **kwargs)
+        if self._instance is None:
+            self._instance = self.cls(*self.args, **self.kwargs)
+        return self._instance
 
-    @classmethod
-    @contextlib.contextmanager
-    def lazy_trace(cls, lazy=True):
-        """
-        Execute a trace lazily to construct a graphical model.
-        """
-        previous = cls.LAZY
-        cls.LAZY = lazy
-        yield
-        cls.LAZY = previous
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.cls.__name__}, ...)"
 
 
 class Node:
-    def __init__(self, *args, **kwargs) -> None:
-        self.args = args
-        self.kwargs = kwargs
-
-    def __matmul__(self, other) -> Self:
+    def __matmul__(self, other):
         return Operator(operator.matmul, self, other)
 
-    def __add__(self, other) -> Self:
+    def __add__(self, other):
         return Operator(operator.add, self, other)
 
 
-class LazySample(Node):
-    def __init__(self, distribution: LazyDistribution, *args, **kwargs) -> None:
-        self.distribution = distribution
-        super().__init__(*args, **kwargs)
-
-
 class Operator(Node):
-    def __init__(self, operation: Callable, *args, **kwargs) -> None:
-        self.operation = operation
-        super().__init__(*args, **kwargs)
+    def __init__(self, operator, *args, **kwargs):
+        self.operator = operator
+        self.args = args
+        self.kwargs = kwargs
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.operator.__name__}, ...)"
+
+
+class DelayedValue(Node):
+    def __init__(self, value=None, name=None):
+        assert not isinstance(value, Node), "Delayed values cannot be nested."
+        self.value = value
+        self.name = name
+
+    def __repr__(self):
+        value = self.value
+        if isinstance(value, jnp.ndarray):
+            value = f"Array(shape={value.shape}, dtype={value.dtype})"
+        elif isinstance(value, distributions.Distribution):
+            value = (
+                f"{value.__class__.__name__}(batch_shape={value.batch_shape}, "
+                f"event_shape={value.event_shape})"
+            )
+        cls = self.__class__.__name__
+        if self.name:
+            return f"{cls}('{self.name}', value={value})"
+        return f"{cls}(value={value})"
+
+
+class delay(Messenger):
+    def process_message(self, msg):
+        msg["value"] = DelayedValue(msg["value"], name=msg["name"])

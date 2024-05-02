@@ -1,17 +1,17 @@
 import avb
 from avb.distributions import PrecisionNormal
+import functools
 import ifnt
 import jax
 from jax import numpy as jnp
 import numpy as np
 import numpyro
 from numpyro import distributions
-from numpyro.infer.util import log_density
 
 
-def model(use_lazy_distribution, n, p) -> None:
-    if use_lazy_distribution:
-        new = avb.LazyDistribution
+def model(delay, n, p) -> None:
+    if delay:
+        new = avb.DelayedDistribution
     else:
         new = lambda cls, *args, **kwargs: cls(*args, **kwargs)  # noqa: E731
 
@@ -30,54 +30,56 @@ def test_smoke() -> None:
     p = 2
 
     samples = []
-    for use_lazy_distribution in [False, True]:
+    for delay in [False, True]:
         with numpyro.handlers.seed(rng_seed=17):
-            trace = numpyro.handlers.trace(model).get_trace(use_lazy_distribution, n, p)
+            trace = numpyro.handlers.trace(model).get_trace(delay, n, p)
         sample = {name: site["value"] for name, site in trace.items()}
         samples.append(sample)
 
     jax.tree.map(np.testing.assert_allclose, *samples)
 
-    # Validate the structure of the lazy trace.
-    with avb.LazyDistribution.lazy_trace():
-        lazy_trace = numpyro.handlers.trace(model).get_trace(True, n, p)
+    # Validate the structure of the delayed trace.
+    with numpyro.handlers.trace() as delayed_trace, avb.delay():
+        numpyro.handlers.trace(model).get_trace(True, n, p)
 
-    assert set(trace) == set(lazy_trace)
-    for name, site in lazy_trace.items():
-        assert isinstance(site["value"], avb.nodes.LazySample), name
-        assert isinstance(site["fn"], avb.nodes.LazyDistribution), name
+    assert set(trace) == set(delayed_trace)
+    for name, site in delayed_trace.items():
+        assert isinstance(site["value"], avb.nodes.DelayedValue), name
+        assert isinstance(site["fn"], avb.nodes.DelayedDistribution), name
 
     # Create the substitution for which we want to evaluate the expected log joint
     # distribution. Substitutions are either concrete values or variational factors to
-    # be optimized. We first create them by name and then use those names to map to the
-    # lazy sample instances.
-    approximation = sample | {
+    # be optimized.
+    substitutions = sample | {
         "tau": distributions.Gamma(4, 3),
         "coef": PrecisionNormal(jnp.asarray([-0.2, 0.3]), jnp.asarray([0.9, 1.1])),
         "intercept": PrecisionNormal(0.4, 1.4),
     }
-    substitutions = {
-        lazy_trace[key]["value"]: value for key, value in approximation.items()
-    }
+    with (
+        numpyro.handlers.trace() as conditioned_trace,
+        avb.delay(),
+        numpyro.handlers.condition(data=substitutions),
+    ):
+        numpyro.handlers.trace(model).get_trace(True, n, p)
 
-    # Evaluate the expected log joint distribution by iterating over all sites.
+    # Evaluate the expected log joitn distribution by iterating over all sites.
     elp = {}
-    for name, site in lazy_trace.items():
-        fn: avb.LazyDistribution = site["fn"]
+    for name, site in conditioned_trace.items():
+        fn: avb.DelayedDistribution = site["fn"]
         value = avb.expect_log_prob(
             fn.cls,
-            substitutions[site["value"]],
+            site["value"],
             *fn.args,
             **fn.kwargs,
-            substitutions=substitutions,
-        )
+        ).sum()
         assert jnp.isfinite(value).all()
         elp[name] = value
 
-    # Verify numerically. This can probably be done more efficiently by batching.
+    # Verify numerically. This can probably be done more efficiently by batching. But
+    # it's just a test.
     n_samples = 1000
     rng = ifnt.random.JaxRandomState(18)
-    log_densities = []
+    log_densities = {}
     for _ in range(n_samples):
         values = {
             key: (
@@ -85,12 +87,19 @@ def test_smoke() -> None:
                 if isinstance(value, distributions.Distribution)
                 else value
             )
-            for key, value in approximation.items()
+            for key, value in substitutions.items()
         }
-        ld, _ = log_density(model, (False, n, p), {}, values)
-        log_densities.append(ld)
-    log_densities = jnp.stack(log_densities)
+        with numpyro.handlers.trace() as trace, numpyro.handlers.condition(data=values):
+            model(False, n, p)
 
-    # Hacky way to add up the log density contributions.
-    actual = sum(jax.tree.map(jnp.sum, elp).values())
-    ifnt.testing.assert_samples_close(log_densities, actual)
+        for name, site in trace.items():
+            log_densities.setdefault(name, []).append(
+                site["fn"].log_prob(site["value"]).sum()
+            )
+
+    log_densities = {key: jnp.stack(value) for key, value in log_densities.items()}
+    jax.tree.map(
+        functools.partial(ifnt.testing.assert_samples_close, atol=1e-5),
+        log_densities,
+        elp,
+    )

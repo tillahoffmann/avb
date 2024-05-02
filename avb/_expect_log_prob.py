@@ -1,41 +1,32 @@
-import functools
 from jax import numpy as jnp
 from jax.scipy.special import gammaln
 from numpyro import distributions
-from ._expect import apply_substitutions, expect
+from ._expect import expect
 from . import dispatch
 from .distributions import PrecisionNormal
 
 
 @dispatch.classdispatch
 @dispatch.reraise_not_implemented_with_args
-def expect_log_prob(cls, value, *args, **kwargs):
+def expect_log_prob(cls, value, *args, **kwargs) -> jnp.ndarray:
     raise NotImplementedError
 
 
 @expect_log_prob.register(PrecisionNormal)
-@apply_substitutions
-def _expect_log_prob_precision_normal(
-    cls, value, loc, precision, *, substitutions=None
-) -> jnp.ndarray:
-    sexpect = functools.partial(expect, substitutions=substitutions)
+def _expect_log_prob_precision_normal(cls, value, loc, precision) -> jnp.ndarray:
     return (
-        sexpect(precision, "log")
+        expect(precision, "log")
         - jnp.log(2 * jnp.pi)
-        - sexpect(precision)
-        * (sexpect(loc, 2) - 2 * sexpect(loc) * sexpect(value) + sexpect(value, 2))
+        - expect(precision)
+        * (expect(loc, 2) - 2 * expect(loc) * expect(value) + expect(value, 2))
     ) / 2
 
 
 @expect_log_prob.register(distributions.Gamma)
-@apply_substitutions
-def _expect_log_prob_gamma(
-    cls, value, concentration, rate, *, substitutions=None
-) -> jnp.ndarray:
+def _expect_log_prob_gamma(cls, value, concentration, rate) -> jnp.ndarray:
     normalize_term = gammaln(concentration) - concentration * expect(rate, "log")
-    sexpect = functools.partial(expect, substitutions=substitutions)
     return (
-        (concentration - 1) * sexpect(value, "log")
-        - sexpect(rate) * sexpect(value)
+        (concentration - 1) * expect(value, "log")
+        - expect(rate) * expect(value)
         - normalize_term
     )

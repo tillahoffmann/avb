@@ -133,7 +133,9 @@ jax==0.4.26
     #   numpyro
     #   optax
 jax-ifnt @ git+https://github.com/tillahoffmann/ifnt
-    # via avb
+    # via
+    #   -r requirements.in
+    #   avb
 jaxlib==0.4.26
     # via
     #   avb
@@ -360,12 +362,12 @@ pyyaml==6.0.1
     # via
     #   jupyter-events
     #   jupytext
-pyzmq==26.0.2
+pyzmq==26.0.3
     # via
     #   ipykernel
     #   jupyter-client
     #   jupyter-server
-referencing==0.35.0
+referencing==0.35.1
     # via
     #   jsonschema
     #   jsonschema-specifications
