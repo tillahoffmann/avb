@@ -230,3 +230,6 @@ class Reshaped(distributions.Distribution):
         )
         log_prob = self.base_dist.log_prob(value.reshape(base_shape))
         return log_prob.reshape(sample_shape + self.batch_shape)
+
+    def entropy(self):
+        return self.base_dist.entropy().reshape(self.batch_shape)
