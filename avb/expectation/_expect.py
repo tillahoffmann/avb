@@ -34,7 +34,11 @@ def _expect_distribution(
         return self.variance
     elif expr == "outer":
         # For a distribution with `batch_shape = xxx` and `event_shape = yyy`, the
-        # "outer" expectation should have shape `xxx + yyy + yyy`.
+        # "outer" expectation should have shape `xxx + yyy + yyy`. We raise an error for
+        # "outer" expectations of distributions without event dimensions.
+        assert (
+            self.event_dim
+        ), f"Expected at least one event dimension; got {self.event_dim}."
         mean: jnp.ndarray = self.mean
         ones = (1,) * self.event_dim
         left = mean.reshape(self.batch_shape + self.event_shape + ones)
@@ -55,6 +59,16 @@ def _expect_distribution(
         return outer_mean + outer_var
     else:
         raise NotImplementedError(self, expr)
+
+
+@expect.register
+def _expect_delta(self: distributions.Delta, expr: Any = 1) -> jnp.ndarray:
+    if expr == "log":
+        return jnp.log(self.v)
+    elif expr == "logabsdet":
+        return jnp.linalg.slogdet(self.v).logabsdet
+    else:
+        return _expect_distribution(self, expr)
 
 
 @expect.register
@@ -90,6 +104,12 @@ def _expect_literal(self, expr=1):
         return jnp.square(self)
     elif expr == "log":
         return jnp.log(self)
+    elif expr == "outer":
+        raise ValueError(
+            "Cannot evaluate the outer expectation of a literal value because the "
+            "event shape is ambiguous. Wrap the value in a `Delta` distribution and "
+            "specify the number of event dimensions to evaluate the outer expectation."
+        )
     elif expr == "logabsdet":
         return jnp.linalg.slogdet(self).logabsdet
     else:
@@ -106,6 +126,17 @@ def _expect_reshaped(self: Reshaped, expr: Any = 1) -> jnp.ndarray:
     return base.reshape(shape)
 
 
+@expect.register(distributions.LowRankMultivariateNormal)
+@expect.register(distributions.MultivariateNormal)
+def _expect_multivariate_normal(self, expr: Any = 1) -> jnp.ndarray:
+    if expr == "outer":
+        return (
+            self.mean[..., :, None] * self.mean[..., None, :] + self.covariance_matrix
+        )
+    else:
+        return _expect_distribution(self, expr)
+
+
 @expect.register
 def _expect_operator_node(self: Operator, expr: Any = 1) -> jnp.ndarray:
     # Dispatch from an operator instance to the specific operation we're evaluating.
@@ -119,17 +150,31 @@ def _expect_operator(self: Operator, expr: Any = 1) -> jnp.ndarray:
 
 @_expect_operator.register(operator.matmul)
 def _expect_operator_matmul(self: Operator, expr: Any = 1) -> jnp.ndarray:
-    # FIXME: We're making some bold independence assumptions for the second moment and
-    # variance.
-    a, b = self.args
+    # FIXME: We only support a design matrix and coefficient vector but complain
+    # extensively to avoid unexpected behavior.
+    a, b = DelayedValue.materialize(*self.args)
+    if isinstance(a, jnp.ndarray):
+        assert a.ndim == 2
+        a = distributions.Delta(a, event_dim=1)
+    assert a.event_dim == 1, "Design matrix must have one event dimension."
+
+    if isinstance(b, jnp.ndarray):
+        assert b.ndim == 1
+        b = distributions.Delta(b, event_dim=1)
+    assert b.event_dim == 1, "Coefficient vector must have one event dimension."
+
+    assert a.event_shape == b.event_shape, "Event shapes must match."
+
     if expr == 1:
         return expect(a) @ expect(b)
     elif expr == 2:
-        return expect(a, 2) @ expect(b, 2)
+        return (expect(a, "outer") * expect(b, "outer")).sum(axis=(-1, -2))
     elif expr == "var":
-        return expect(a, 2) @ expect(b, 2) - jnp.square(expect(a) @ expect(b))
+        return _expect_operator_matmul(self, 2) - jnp.square(
+            _expect_operator_matmul(self)
+        )
     else:
-        raise NotImplementedError
+        raise NotImplementedError(expr)
 
 
 @_expect_operator.register(operator.add)

@@ -5,7 +5,8 @@ from numpyro import distributions
 from ._expect import expect
 from .. import dispatch
 from ..distributions import LinearDynamicalSystem, PrecisionNormal
-from ..util import tail_trace
+from ..nodes import DelayedValue
+from ..util import as_distribution, tail_trace
 
 
 @dispatch.classdispatch
@@ -44,6 +45,36 @@ def _expect_log_prob_wishart(cls, value, concentration, rate_matrix) -> jnp.ndar
         + concentration / 2 * expect(rate_matrix, "logabsdet")
         - multigammaln(concentration / 2, p)
     )
+
+
+@expect_log_prob.register(distributions.MultivariateNormal)
+def _expect_log_prob_multivariate_normal(
+    cls, value, loc, precision_matrix
+) -> jnp.ndarray:
+    # Take expectations. We add a trailing dimension to the first moments for easier
+    # handling of matrix multiplications.
+    precision_matrix1 = expect(precision_matrix)
+    value, loc = DelayedValue.materialize(value, loc)
+    value = as_distribution(value, event_dim=1)
+    loc = as_distribution(loc, event_dim=1)
+    value1 = expect(value)[..., None]
+    valueo = expect(value, "outer")
+    loc1 = expect(loc)[..., None]
+    loco = expect(loc, "outer")
+
+    # Evaluate the square in the exponent. We use the cyclical property of the trace to
+    # evaluate the outer moments.
+    squareform = (
+        tail_trace(valueo @ precision_matrix1)
+        - tail_trace(value1.mT @ precision_matrix1 @ loc1)
+        - tail_trace(loc1.mT @ precision_matrix1 @ value1)
+        + tail_trace(loco @ precision_matrix1)
+    )
+
+    p = precision_matrix1.shape[-1]
+    return (
+        expect(precision_matrix, "logabsdet") - p * jnp.log(2 * jnp.pi) - squareform
+    ) / 2
 
 
 @expect_log_prob.register(LinearDynamicalSystem)

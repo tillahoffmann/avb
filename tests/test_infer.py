@@ -17,7 +17,9 @@ def linear_model(n=7, p=2, *, delay) -> None:
 
     X = numpyro.sample("X", new(PrecisionNormal, jnp.zeros((n, p)), 1))
     intercept = numpyro.sample("intercept", new(PrecisionNormal, 0, 1))
-    coef = numpyro.sample("coef", new(PrecisionNormal, jnp.zeros(p), 1))
+    coef = numpyro.sample(
+        "coef", new(distributions.MultivariateNormal, jnp.zeros(p), jnp.eye(p))
+    )
     tau = numpyro.sample("tau", new(distributions.Gamma, 4, 1))
     y_hat = intercept + X @ coef
     numpyro.sample("y", new(PrecisionNormal, y_hat, tau))
@@ -57,7 +59,7 @@ def test_expect_log_joint_linear_model() -> None:
     conditioned = numpyro.handlers.condition(linear_model, data)
     approximation = {
         "tau": distributions.Gamma(*(rng.gamma(10, (2,)) / 10)),
-        "coef": PrecisionNormal(rng.normal((p,)), rng.gamma(7, (p,)) / 7),
+        "coef": PrecisionNormal(rng.normal((p,)), rng.gamma(7, (p,)) / 7).to_event(),
         "intercept": PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
     }
     elp = avb.expect_log_joint(conditioned, approximation, aggregate=False)(
@@ -105,7 +107,9 @@ def test_elbo_linear_model() -> None:
     conditioned = numpyro.handlers.condition(linear_model, data)
     approximation = {
         "tau": distributions.Gamma(*(rng.gamma(10, (2,)) / 10)),
-        "coef": PrecisionNormal(rng.normal((p,)), rng.gamma(7, (p,)) / 7),
+        "coef": distributions.MultivariateNormal(
+            rng.normal((p,)), jnp.eye(p) * rng.gamma(7, (p,)) / 7
+        ),
         "intercept": PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
     }
     elbo = avb.elbo_loss(conditioned, approximation)(n, p, delay=True)
