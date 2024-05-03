@@ -8,4 +8,5 @@ __pycache__
 data
 dist
 docs/_build
+htmlcov
 playground
