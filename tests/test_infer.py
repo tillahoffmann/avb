@@ -46,6 +46,8 @@ def test_delayed_eager_equivalence_and_structure() -> None:
     for name, site in delayed_trace.items():
         assert isinstance(site["value"], avb.nodes.DelayedValue), name
         assert isinstance(site["fn"], avb.nodes.DelayedDistribution), name
+        assert not site["value"].has_value
+        assert site["value"].shape == trace[name]["value"].shape
 
 
 def test_expect_log_joint_linear_model() -> None:
@@ -92,7 +94,7 @@ def test_expect_log_joint_linear_model() -> None:
     jax.tree.map(
         functools.partial(ifnt.testing.assert_samples_close, atol=1e-5),
         log_densities,
-        elp,
+        jax.tree.map(jnp.sum, elp),
     )
 
 
