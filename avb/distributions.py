@@ -162,7 +162,7 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
 
 class Reshaped(distributions.Distribution):
     """
-    Reshape the event shape of a distribution.
+    Reshape the batch and event shapes of a distribution.
 
     Args:
         base_distribution: Distribution to reshape.
