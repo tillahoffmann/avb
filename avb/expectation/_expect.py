@@ -1,4 +1,5 @@
 import functools
+import ifnt
 from jax import numpy as jnp
 from jax.scipy.special import digamma
 from numpyro import distributions
@@ -194,4 +195,4 @@ def _expect_operator_add(self: Operator, expr: Any = 1) -> jnp.ndarray:
 @_expect_operator.register(operator.getitem)
 def _expect_operator_getitem(self: Operator, expr: Any = 1) -> jnp.ndarray:
     arg, key = self.args
-    return expect(arg, expr)[key]
+    return ifnt.index_guard(expect(arg, expr))[key]
