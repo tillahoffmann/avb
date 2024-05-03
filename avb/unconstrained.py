@@ -101,64 +101,67 @@ def _from_unconstrained_wishart(
     )
 
 
+def _to_unconstrained_base_dist(base_dist, arg_constraints):
+    """
+    Convert a distribution to a "base" representation that can be used by transformed
+    distributions.
+    """
+    unconstrained, aux = to_unconstrained(base_dist)
+    return {"base": unconstrained}, {"base": aux, "base_cls": base_dist.__class__}
+
+
+def _from_unconstrained_base_dist(
+    unconstrained, aux, arg_constraints=None, validate_args=None
+):
+    return from_unconstrained(
+        aux.pop("base_cls"),
+        unconstrained.pop("base"),
+        aux.pop("base"),
+        arg_constraints=arg_constraints,
+        validate_args=validate_args,
+    )
+
+
 @from_unconstrained.register(Reshaped)
 def _from_unconstrained_reshaped(
     cls, unconstrained, aux, arg_constraints=None, validate_args=None
 ):
-    aux = aux.copy()
-    unconstrained = unconstrained.copy()
-    base_dist = from_unconstrained(
-        aux.pop("base_cls"),
-        unconstrained.pop("base_params"),
-        aux.pop("base_aux"),
-        arg_constraints,
-        validate_args=validate_args,
+    base_dist = _from_unconstrained_base_dist(
+        unconstrained, aux, arg_constraints, validate_args=validate_args
     )
-    assert not unconstrained
     return cls(base_dist, **aux)
 
 
 @to_unconstrained.register
 def _to_unconstrained_reshaped(self: Reshaped, arg_constraints=None):
-    base_dist_params, base_dist_aux = to_unconstrained(
-        self.base_dist, arg_constraints=arg_constraints
+    unconstrained, aux = _to_unconstrained_base_dist(self.base_dist, arg_constraints)
+    aux.update(
+        {
+            "batch_shape": self.batch_shape,
+            "event_shape": self.event_shape,
+        }
     )
-    return {
-        "base_params": base_dist_params,
-    }, {
-        "base_aux": base_dist_aux,
-        "base_cls": self.base_dist.__class__,
-        "event_shape": self.event_shape,
-        "batch_shape": self.batch_shape,
-    }
+    return unconstrained, aux
 
 
 @to_unconstrained.register
-def _to_params_independent(self: distributions.Independent, arg_constraints=None):
-    base_dist_params, base_dist_aux = to_unconstrained(
-        self.base_dist, arg_constraints=arg_constraints
+def _to_unconstrained_independent(
+    self: distributions.Independent, arg_constraints=None
+):
+    unconstrained, aux = _to_unconstrained_base_dist(self.base_dist, arg_constraints)
+    aux.update(
+        {
+            "reinterpreted_batch_ndims": self.reinterpreted_batch_ndims,
+        }
     )
-    return {
-        "base_params": base_dist_params,
-    }, {
-        "base_aux": base_dist_aux,
-        "base_cls": self.base_dist.__class__,
-        "reinterpreted_batch_ndims": self.reinterpreted_batch_ndims,
-    }
+    return unconstrained, aux
 
 
 @from_unconstrained.register(distributions.Independent)
 def _from_unconstrained_independent(
     cls, unconstrained, aux, arg_constraints=None, validate_args=None
 ):
-    aux = aux.copy()
-    unconstrained = unconstrained.copy()
-    base_dist = from_unconstrained(
-        aux.pop("base_cls"),
-        unconstrained.pop("base_params"),
-        aux.pop("base_aux"),
-        arg_constraints,
-        validate_args=validate_args,
+    base_dist = _from_unconstrained_base_dist(
+        unconstrained, aux, arg_constraints, validate_args=validate_args
     )
-    assert not unconstrained
     return cls(base_dist, **aux)

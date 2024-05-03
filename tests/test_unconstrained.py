@@ -34,7 +34,9 @@ def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
 
     # Randomize the unconstrained parameters and construct a distribution, validating
     # arguments. The distribution should still be valid unless the arg constraints are
-    # wrong.
+    # wrong. We need to call `to_unconstrained` again because `from_unconstrained`
+    # modifies its arguments in place.
+    unconstrained, aux = avb.to_unconstrained(dist)
     unconstrained = jax.tree.map(lambda x: rng.normal(x.shape), unconstrained)
     other = avb.from_unconstrained(
         dist.__class__, unconstrained, aux, validate_args=True
