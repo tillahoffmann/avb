@@ -1,14 +1,16 @@
+import ifnt
 from jax import numpy as jnp
 from jax.scipy.special import gammaln, multigammaln
 from numpyro import distributions
 from ._expect import expect
 from .. import dispatch
+from ..distributions import LinearDynamicalSystem, PrecisionNormal
 from ..util import tail_trace
 
 
 @dispatch.classdispatch
 def expect_log_prob(cls, value, *args, **kwargs) -> jnp.ndarray:
-    raise NotImplementedError
+    raise NotImplementedError(cls)
 
 
 @expect_log_prob.register(PrecisionNormal)
@@ -43,3 +45,87 @@ def _expect_log_prob_wishart(cls, value, concentration, rate_matrix) -> jnp.ndar
         - multigammaln(concentration / 2, p)
     )
 
+
+@expect_log_prob.register(LinearDynamicalSystem)
+def expect_log_prob_linear_dynamical_system(
+    cls,
+    value,
+    transition_matrix: jnp.ndarray,
+    innovation_precision,
+) -> jnp.ndarray:
+    r"""
+    Evaluate the expected log probability for
+
+    .. math::
+
+        y_{t + 1} = A y_t + x_t
+
+    for :math:`p`-dimensional state :math:`y\in\mathbb{R}^p` and innovations
+    :math:`x\in\mathbb{R}^p`. We may equivalently write
+
+    .. math::
+
+        x_t = y_{t + 1} - A y_t
+
+    such that the difference of adjacent states (after applying the appropriate
+    transform) is equal to the innovation noise. The log probability is thus
+
+    .. math::
+
+        2 \log p(y) &= -pt \log\left(2\pi\right) + \log \left|\tau_0\right|
+            + (t - 1)\log\left|\tau\right| \\
+            &\qquad - y_1^\intercal \tau_0 y_1
+            - \sum_{k=2} ^ t \left(y_k - A y_{k - 1}\right)^\intercal \tau
+            \left(y_k - A y_{k - 1}\right).
+
+    Args:
+        value: State :code:`y`.
+        transition_matrix: Transition matrix for the state.
+        precision: Precision of innovations.
+        init_precision: Precision of the first innovation (defaults to the usual
+            precision).
+
+    Returns:
+        Expected log probability.
+    """
+    # Validate shapes.
+    _, p = transition_matrix.shape
+    outer = expect(value, "outer")
+    assert outer.shape[-1] == p and outer.shape[-3] == p
+    n_steps = outer.shape[-2]
+    assert outer.shape[-2] == n_steps and outer.shape[-4] == n_steps
+    batch_shape = outer.shape[:-4]
+
+    # Reshape so we can use matrix multiplication in the state dimensions.
+    outer = jnp.moveaxis(outer, -2, -3)
+    assert outer.shape == batch_shape + (n_steps, n_steps, p, p)
+
+    innovation_precision1 = expect(innovation_precision)
+    innovation_logabsdet = expect(innovation_precision, "logabsdet")
+
+    i = jnp.arange(n_steps)
+    diag = ifnt.index_guard(outer)[..., i, i, :, :]
+    diag_sum = diag.sum(axis=-3)
+    i = jnp.arange(n_steps - 1)
+    offdiag_sum = ifnt.index_guard(outer)[..., i, i + 1, :, :].sum(axis=-3)
+    squareform = (
+        # Contributions due to the first innovation with different precision.
+        tail_trace(ifnt.index_guard(diag)[..., 0, :, :] @ innovation_precision1)
+        # Contributions from remaining innovations.
+        + tail_trace((diag_sum - diag[..., 0, :, :]) @ innovation_precision1)
+        # Reactionary contributions.
+        + tail_trace(
+            (diag_sum - diag[..., -1, :, :])
+            @ transition_matrix.T
+            @ innovation_precision1
+            @ transition_matrix
+        )
+        # Interactions.
+        - 2 * tail_trace(offdiag_sum @ innovation_precision1 @ transition_matrix)
+    )
+
+    result = (
+        n_steps * innovation_logabsdet - squareform - n_steps * p * jnp.log(2 * jnp.pi)
+    ) / 2
+    ifnt.testing.assert_shape(result, batch_shape)
+    return result
