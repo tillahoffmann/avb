@@ -99,6 +99,7 @@ def from_unconstrained(
     Returns:
         Distribution instance.
     """
+    aux = aux.copy()
     cls = aux.pop("cls")
     arg_constraints = arg_constraints or {}
     params = {}
@@ -143,6 +144,7 @@ def _to_unconstrained_base_dist(base_dist, arg_constraints=None):
 def _from_unconstrained_base_dist(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ) -> distributions.Distribution:
+    aux = aux.copy()
     return from_unconstrained(
         unconstrained.pop("base"),
         aux.pop("base"),
@@ -183,6 +185,7 @@ def _to_unconstrained_independent(
 def _from_unconstrained_with_base_dist(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ):
+    aux = aux.copy()
     base_dist = _from_unconstrained_base_dist(
         unconstrained, aux, arg_constraints, validate_args=validate_args
     )

@@ -4,6 +4,7 @@ import functools
 import ifnt
 import jax
 from jax import numpy as jnp
+import jaxopt
 import numpy as np
 import numpyro
 from numpyro import distributions
@@ -134,3 +135,29 @@ def test_elbo_linear_model() -> None:
     trace_elbos = jnp.stack(trace_elbos)
 
     ifnt.testing.assert_samples_close(trace_elbos, elbo)
+
+
+def test_end_to_end_linear_model() -> None:
+    n = 500
+    p = 5
+    with numpyro.handlers.trace() as trace, numpyro.handlers.seed(rng_seed=9):
+        linear_model(n, p, delay=False)
+    data = {"X": trace["X"]["value"], "y": trace["y"]["value"]}
+    # We use a partial model because jit-compiling the "delay" parameter causes
+    # TracerBoolConversionError.
+    partial_model = functools.partial(linear_model, n, p, delay=True)
+    conditioned = numpyro.handlers.condition(partial_model, data)
+    approximation = {
+        "tau": distributions.Gamma(jnp.ones(()), jnp.ones(())),
+        "coef": distributions.LowRankMultivariateNormal(
+            jnp.zeros(p), jnp.ones((p, 2)), jnp.ones(p)
+        ),
+        "intercept": PrecisionNormal(jnp.ones(()), jnp.ones(())),
+    }
+    unconstrained, aux = avb.approximation_to_unconstrained(approximation)
+    # This wrapper contains all the static information so we can jit-compile it.
+    loss_fn = jax.jit(avb.elbo_loss_from_unconstrained(conditioned, aux))
+    solver = jaxopt.LBFGS(loss_fn)
+    result = solver.run(unconstrained)
+    approximation = avb.approximation_from_unconstrained(result.params, aux)
+    assert jnp.corrcoef(approximation["coef"].mean, trace["coef"]["value"])[0, 1] > 0.99
