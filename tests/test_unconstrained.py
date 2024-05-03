@@ -28,7 +28,7 @@ rng = ifnt.random.JaxRandomState(43)
 def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
     # Run one round trip and verify the log probs are the same.
     unconstrained, aux = avb.to_unconstrained(dist)
-    other = avb.from_unconstrained(dist.__class__, unconstrained, aux)
+    other = avb.from_unconstrained(unconstrained, aux)
     x = dist.sample(rng.get_key())
     ifnt.testing.assert_allclose(other.log_prob(x), dist.log_prob(x), atol=1e-5)
 
@@ -38,8 +38,6 @@ def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
     # modifies its arguments in place.
     unconstrained, aux = avb.to_unconstrained(dist)
     unconstrained = jax.tree.map(lambda x: rng.normal(x.shape), unconstrained)
-    other = avb.from_unconstrained(
-        dist.__class__, unconstrained, aux, validate_args=True
-    )
+    other = avb.from_unconstrained(unconstrained, aux, validate_args=True)
     log_prob = other.log_prob(x)
     ifnt.testing.assert_allfinite(log_prob)
