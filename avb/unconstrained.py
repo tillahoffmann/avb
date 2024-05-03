@@ -84,6 +84,10 @@ def from_unconstrained(
     Transform a tuple of unconstrained parameters and static auxiliary information to a
     distribution instance.
 
+    .. warning::
+
+        :func:`from_unconstrained` may modify its arguments in-place.
+
     Args:
         unconstrained: Unconstrained parameters.
         aux: Static auxiliary information, including the distribution type a the
