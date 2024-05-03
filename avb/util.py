@@ -1,5 +1,6 @@
 from jax import numpy as jnp
 from jax.scipy import special
+from numpyro import distributions
 
 
 def tail_trace(a: jnp.ndarray) -> jnp.ndarray:
@@ -16,3 +17,13 @@ def multidigamma(a: jnp.ndarray, d: jnp.ndarray) -> jnp.ndarray:
     """
     # Based on https://bayespy.org/_modules/bayespy/utils/misc.html#multidigamma.
     return special.digamma(a[..., None] - 0.5 * jnp.arange(d)).sum(axis=-1)
+
+
+def as_distribution(value, event_dim=None):
+    if isinstance(value, distributions.Distribution):
+        if event_dim is not None and event_dim != value.event_dim:
+            raise ValueError(
+                f"Expected {event_dim} event dimensions; got {value.event_dim}."
+            )
+        return value
+    return distributions.Delta(value, event_dim=event_dim)
