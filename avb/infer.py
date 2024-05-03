@@ -4,7 +4,7 @@ from jax import numpy as jnp
 from numpyro import handlers
 from typing import Callable, Dict, Union
 from .expectation import expect_log_prob
-from .nodes import delay, DelayedDistribution
+from .nodes import delay, DelayedDistribution, DelayedValue
 
 
 def expect_log_joint(
@@ -32,20 +32,21 @@ def expect_log_joint(
         result = {}
         for name, site in trace.items():
             fn = site["fn"]
+            value = site["value"]
             assert isinstance(fn, DelayedDistribution)
-            # FIXME: Do not sum blindly over all dimensions but make sure we have
-            # log_prob shape equal to the batch shape of the distribution.
-            value = expect_log_prob(
+            assert isinstance(value, DelayedValue)
+            assert value.has_value
+            elp = expect_log_prob(
                 fn.cls,
-                site["value"],
+                value,
                 *fn.args,
                 **fn.kwargs,
-            ).sum()
-            ifnt.testing.assert_allfinite(value)
-            result[name] = value
+            )
+            ifnt.testing.assert_allfinite(elp)
+            result[name] = elp
 
         if aggregate:
-            return sum(result.values())
+            return sum(x.sum() for x in result.values())
         return result
 
     return _expect_log_joint_wrapper
