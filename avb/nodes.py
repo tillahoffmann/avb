@@ -69,8 +69,18 @@ class Operator(Node):
 class DelayedValue(Node):
     def __init__(self, value=None, name=None):
         assert not isinstance(value, Node), "Delayed values cannot be nested."
-        self.value = value
+        self._value = value
         self.name = name
+
+    @property
+    def has_value(self):
+        return self._value is not None
+
+    @property
+    def value(self):
+        if not self.has_value:
+            raise RuntimeError("Delayed value has no value.")
+        return self._value
 
     def __repr__(self):
         value = self.value
