@@ -14,6 +14,7 @@ class PrecisionNormal(distributions.Normal):
     }
 
     def __init__(self, loc=0.0, precision=1.0, *, validate_args=None) -> None:
+        self.precision = precision
         super().__init__(
             loc=loc, scale=1.0 / jnp.sqrt(precision), validate_args=validate_args
         )
