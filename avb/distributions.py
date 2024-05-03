@@ -23,7 +23,6 @@ def _evaluate_markov_precision(
     *,
     transition_matrix: jnp.ndarray,
     innovation_precision: jnp.ndarray,
-    init_precision: jnp.ndarray,
     n_steps: int,
 ) -> jnp.ndarray:
     """
@@ -33,7 +32,6 @@ def _evaluate_markov_precision(
         transition_matrix: Transition matrix with shape `(..., p, p)`, where `p` is the
             dimensionality of the state space.
         innovation_precision: Precision of innovation noise with shape `(..., p, p)`.
-        init_precision: Precision of the initial state with shape `(..., p, p)`.
         n_steps: Number of steps.
 
     Returns:
@@ -41,13 +39,12 @@ def _evaluate_markov_precision(
     """
     # Broadcast arrays and reshape to have a single batch dimension. We'll restore it
     # later.
-    transition_matrix, innovation_precision, init_precision = jnp.broadcast_arrays(
-        transition_matrix, innovation_precision, init_precision
+    transition_matrix, innovation_precision = jnp.broadcast_arrays(
+        transition_matrix, innovation_precision
     )
     *batch_shape, p, _ = transition_matrix.shape
     transition_matrix = transition_matrix.reshape((-1, p, p))
     innovation_precision = innovation_precision.reshape((-1, p, p))
-    init_precision = init_precision.reshape((-1, p, p))
 
     # Evaluate one of the blocks of the precision matrix which we'll pad and roll.
     negative_offdiag_block = transition_matrix.mT @ innovation_precision
@@ -67,11 +64,8 @@ def _evaluate_markov_precision(
     result = jnp.moveaxis(result, 0, -3).reshape((-1, n_steps * p, n_steps * p))
 
     # Set the last element to the innovation precision because there are no subsequent
-    # samples. Set the first element to account for the different initial precision.
+    # samples.
     result = ifnt.index_guard(result.at)[..., -p:, -p:].set(innovation_precision)
-    result = ifnt.index_guard(result.at)[..., :p, :p].set(
-        (negative_offdiag_block @ transition_matrix) + init_precision
-    )
     # Restore the old batch shape.
     return result.reshape((*batch_shape, n_steps, p, n_steps, p))
 
@@ -89,7 +83,6 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
     arg_constraints = {
         "transition_matrix": distributions.constraints.real_matrix,
         "innovation_precision": distributions.constraints.positive_definite,
-        "init_precision": distributions.constraints.positive_definite,
         "n_steps": distributions.constraints.positive_integer,
     }
 
@@ -97,33 +90,25 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
         self,
         transition_matrix: jnp.ndarray,
         innovation_precision: jnp.ndarray,
-        init_precision: Optional[jnp.ndarray] = None,
         n_steps: int = 1,
         *,
         validate_args=None,
     ) -> None:
         self.transition_matrix = transition_matrix
         self.innovation_precision = innovation_precision
-        if init_precision is None:
-            init_precision = self.innovation_precision
-        self.init_precision = init_precision
         self.n_steps = n_steps
 
         _, p = self.transition_matrix.shape
         innovation_distribution = distributions.MultivariateNormal(
             jnp.zeros(p),
-            precision_matrix=jnp.concatenate(
-                [
-                    self.init_precision[..., None, :, :],
-                    jnp.repeat(
-                        self.innovation_precision[..., None, :, :],
-                        self.n_steps - 1,
-                        axis=-3,
-                    ),
-                ],
-                axis=-3,
+            precision_matrix=jnp.repeat(
+                self.innovation_precision[..., None, :, :], self.n_steps, axis=-3
             ),
         )
+        assert innovation_distribution.event_shape == (p,)
+        assert innovation_distribution.batch_shape == innovation_precision.shape[
+            :-2
+        ] + (n_steps,)
         transform = distributions.transforms.RecursiveLinearTransform(
             self.transition_matrix
         )
@@ -155,7 +140,6 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
         return _evaluate_markov_precision(
             transition_matrix=self.transition_matrix,
             innovation_precision=self.innovation_precision,
-            init_precision=self.init_precision,
             n_steps=self.n_steps,
         )
 

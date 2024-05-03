@@ -6,7 +6,7 @@ from numpyro import distributions
 import operator
 from typing import Any
 from ..dispatch import valuedispatch
-from ..distributions import Reshaped
+from ..distributions import LinearDynamicalSystem, Reshaped
 from ..nodes import DelayedValue, Operator
 from ..util import multidigamma
 
@@ -134,6 +134,19 @@ def _expect_multivariate_normal(self, expr: Any = 1) -> jnp.ndarray:
         return (
             self.mean[..., :, None] * self.mean[..., None, :] + self.covariance_matrix
         )
+    else:
+        return _expect_distribution(self, expr)
+
+
+@expect.register
+def _expect_linear_dynamical_system(
+    self: LinearDynamicalSystem, expr: Any = 1
+) -> jnp.ndarray:
+    if expr == "outer":
+        # Slightly verbose, but useful for line-profiling.
+        mean2 = self.mean[..., :, :, None, None] * self.mean[..., None, None, :, :]
+        cov = self.covariance_tensor
+        return mean2 + cov
     else:
         return _expect_distribution(self, expr)
 

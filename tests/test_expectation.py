@@ -38,6 +38,14 @@ DISTRIBUTION_CONFIGS = [
         ),
         (1, 2, "logabsdet", "var"),
     ),
+    (
+        avb.distributions.LinearDynamicalSystem(
+            rng.normal((3, 3)),
+            distributions.Wishart(10, jnp.eye(3) / 10).sample(rng.get_key()),
+            5,
+        ),
+        (1, 2, "outer", "var"),
+    ),
 ]
 
 
@@ -154,6 +162,14 @@ def test_expect_operator(operator: Operator, expr: Any) -> None:
                 "precision_matrix": distributions.Wishart(20, jnp.eye(3)),
             },
         ),
+        (
+            avb.distributions.LinearDynamicalSystem,
+            {
+                "transition_matrix": rng.normal((2, 2)),
+                "innovation_precision": distributions.Wishart(20, jnp.eye(2)),
+                "n_steps": 5,
+            },
+        ),
     ],
 )
 def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) -> None:
@@ -172,7 +188,11 @@ def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) ->
     # Sanity check that the expected log probability is correct for a point mass.
     x = dist.sample(rng.get_key())
     ifnt.testing.assert_allclose(
-        avb.expect_log_prob(cls, x, **instance_params), dist.log_prob(x), rtol=1e-5
+        avb.expect_log_prob(
+            cls, distributions.Delta(x, event_dim=dist.event_dim), **instance_params
+        ),
+        dist.log_prob(x),
+        rtol=1e-5,
     )
 
     # Sample from the parameter distributions to construct an ensemble of parameters to

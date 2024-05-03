@@ -78,11 +78,12 @@ def _expect_log_prob_multivariate_normal(
 
 
 @expect_log_prob.register(LinearDynamicalSystem)
-def expect_log_prob_linear_dynamical_system(
+def _expect_log_prob_linear_dynamical_system(
     cls,
     value,
     transition_matrix: jnp.ndarray,
     innovation_precision,
+    n_steps: int = None,
 ) -> jnp.ndarray:
     r"""
     Evaluate the expected log probability for
@@ -103,18 +104,16 @@ def expect_log_prob_linear_dynamical_system(
 
     .. math::
 
-        2 \log p(y) &= -pt \log\left(2\pi\right) + \log \left|\tau_0\right|
+        2 \log p(y) &= -pt \log\left(2\pi\right) + \log \left|\tau\right|
             + (t - 1)\log\left|\tau\right| \\
-            &\qquad - y_1^\intercal \tau_0 y_1
+            &\qquad - y_1^\intercal \tau y_1
             - \sum_{k=2} ^ t \left(y_k - A y_{k - 1}\right)^\intercal \tau
             \left(y_k - A y_{k - 1}\right).
 
     Args:
         value: State :code:`y`.
         transition_matrix: Transition matrix for the state.
-        precision: Precision of innovations.
-        init_precision: Precision of the first innovation (defaults to the usual
-            precision).
+        innovation_precision: Precision of innovations.
 
     Returns:
         Expected log probability.
@@ -123,16 +122,16 @@ def expect_log_prob_linear_dynamical_system(
     _, p = transition_matrix.shape
     outer = expect(value, "outer")
     assert outer.shape[-1] == p and outer.shape[-3] == p
-    n_steps = outer.shape[-2]
+    if n_steps is None:
+        n_steps = outer.shape[-2]
     assert outer.shape[-2] == n_steps and outer.shape[-4] == n_steps
     batch_shape = outer.shape[:-4]
 
     # Reshape so we can use matrix multiplication in the state dimensions.
     outer = jnp.moveaxis(outer, -2, -3)
-    assert outer.shape == batch_shape + (n_steps, n_steps, p, p)
+    ifnt.testing.assert_shape(outer, batch_shape + (n_steps, n_steps, p, p))
 
     innovation_precision1 = expect(innovation_precision)
-    innovation_logabsdet = expect(innovation_precision, "logabsdet")
 
     i = jnp.arange(n_steps)
     diag = ifnt.index_guard(outer)[..., i, i, :, :]
@@ -140,14 +139,12 @@ def expect_log_prob_linear_dynamical_system(
     i = jnp.arange(n_steps - 1)
     offdiag_sum = ifnt.index_guard(outer)[..., i, i + 1, :, :].sum(axis=-3)
     squareform = (
-        # Contributions due to the first innovation with different precision.
-        tail_trace(ifnt.index_guard(diag)[..., 0, :, :] @ innovation_precision1)
-        # Contributions from remaining innovations.
-        + tail_trace((diag_sum - diag[..., 0, :, :]) @ innovation_precision1)
-        # Reactionary contributions.
+        # Contributions due to innovations.
+        tail_trace(diag_sum @ innovation_precision1)
+        # Reactionary contributions except for the last element.
         + tail_trace(
             (diag_sum - diag[..., -1, :, :])
-            @ transition_matrix.T
+            @ transition_matrix.mT
             @ innovation_precision1
             @ transition_matrix
         )
@@ -156,7 +153,9 @@ def expect_log_prob_linear_dynamical_system(
     )
 
     result = (
-        n_steps * innovation_logabsdet - squareform - n_steps * p * jnp.log(2 * jnp.pi)
+        n_steps * expect(innovation_precision, "logabsdet")
+        - n_steps * p * jnp.log(2 * jnp.pi)
+        - squareform
     ) / 2
     ifnt.testing.assert_shape(result, batch_shape)
     return result
