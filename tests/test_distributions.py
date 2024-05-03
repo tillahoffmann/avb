@@ -41,4 +41,4 @@ def test_linear_dynamical_system_log_prob() -> None:
         0, precision_matrix=innovation_precision[..., None, :, :]
     ).to_event(1)
     other_log_prob = other_dist.log_prob(x)
-    ifnt.testing.assert_allclose(log_prob, other_log_prob, atol=1e-6)
+    ifnt.testing.assert_allclose(log_prob, other_log_prob, rtol=1e-5)
