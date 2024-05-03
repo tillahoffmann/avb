@@ -133,17 +133,15 @@ def _expect_log_prob_linear_dynamical_system(
 
     innovation_precision1 = expect(innovation_precision)
 
-    i = jnp.arange(n_steps)
-    diag = ifnt.index_guard(outer)[..., i, i, :, :]
-    diag_sum = diag.sum(axis=-3)
-    i = jnp.arange(n_steps - 1)
-    offdiag_sum = ifnt.index_guard(outer)[..., i, i + 1, :, :].sum(axis=-3)
+    diag = jnp.diagonal(outer, axis1=-3, axis2=-4)
+    diag_sum = diag.sum(axis=-1)
+    offdiag_sum = jnp.diagonal(outer, axis1=-3, axis2=-4, offset=-1).sum(axis=-1)
     squareform = (
         # Contributions due to innovations.
         tail_trace(diag_sum @ innovation_precision1)
         # Reactionary contributions except for the last element.
         + tail_trace(
-            (diag_sum - diag[..., -1, :, :])
+            (diag_sum - diag[..., -1])
             @ transition_matrix.mT
             @ innovation_precision1
             @ transition_matrix
