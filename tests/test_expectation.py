@@ -78,6 +78,14 @@ OPERATOR_CONFIGS = [
         ),
         (1, 2, "var"),
     ),
+    (
+        Operator(
+            builtin_operator.getitem,
+            distributions.Gamma(rng.gamma(10, (5, 2)), 0.2),
+            (Ellipsis, jnp.asarray([2, 4]), slice(None)),
+        ),
+        (1, 2, "var", "log"),
+    ),
 ]
 
 
