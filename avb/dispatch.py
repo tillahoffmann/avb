@@ -42,17 +42,3 @@ def valuedispatch(func=None, *, key=None):
     _valuedispatch_wrapper.register = _valuedispatch_register
     _valuedispatch_wrapper.registry = registry
     return _valuedispatch_wrapper
-
-
-def reraise_not_implemented_with_args(func):
-    @functools.wraps(func)
-    def _reraise_with_args_wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except NotImplementedError as ex:
-            raise NotImplementedError(
-                f"`{func.__name__}` is not implemented for args={args} and "
-                f"kwargs={kwargs}."
-            ) from ex
-
-    return _reraise_with_args_wrapper
