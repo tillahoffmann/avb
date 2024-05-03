@@ -1,6 +1,6 @@
 import functools
 from numpyro import distributions
-from typing import Tuple
+from typing import Dict, Tuple
 from .dispatch import valuedispatch
 from .distributions import PrecisionNormal, Reshaped
 
@@ -187,3 +187,32 @@ def _from_unconstrained_with_base_dist(
         unconstrained, aux, arg_constraints, validate_args=validate_args
     )
     return aux.pop("cls")(base_dist, **aux)
+
+
+def approximation_to_unconstrained(
+    approximation: Dict[str, distributions.Distribution]
+) -> Tuple[dict, dict]:
+    """
+    Transform a dictionary of variational factors to optimizable, unconstrained
+    parameters and static auxiliary information.
+    """
+    unconstrained = {}
+    aux = {}
+    for key, factor in approximation.items():
+        unconstrained[key], aux[key] = to_unconstrained(factor)
+    return unconstrained, aux
+
+
+def approximation_from_unconstrained(
+    unconstrained: dict, aux: dict, *, validate_args=None
+) -> Dict[str, distributions.Distribution]:
+    """
+    Transform a tuple of unconstrained parameters and static auxiliary information to a
+    dictionary of variational factors.
+    """
+    approximation = {}
+    for key, value in unconstrained.items():
+        approximation[key] = from_unconstrained(
+            value, aux[key], validate_args=validate_args
+        )
+    return approximation

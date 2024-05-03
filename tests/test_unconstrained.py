@@ -41,3 +41,19 @@ def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
     other = avb.from_unconstrained(unconstrained, aux, validate_args=True)
     log_prob = other.log_prob(x)
     ifnt.testing.assert_allfinite(log_prob)
+
+
+def test_unconstrained_approximation_round_trip() -> None:
+    approximation = {
+        "tau": distributions.Gamma(*(rng.gamma(10, (2,)) / 10)),
+        "coef": avb.distributions.PrecisionNormal(
+            rng.normal((3,)), rng.gamma(7, (3,)) / 7
+        ).to_event(),
+        "intercept": avb.distributions.PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
+    }
+    unconstrained, aux = avb.approximation_to_unconstrained(approximation)
+    other = avb.approximation_from_unconstrained(unconstrained, aux)
+
+    for key, factor in approximation.items():
+        x = factor.sample(rng.get_key())
+        ifnt.testing.assert_allclose(factor.log_prob(x), other[key].log_prob(x))
