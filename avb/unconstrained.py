@@ -84,10 +84,6 @@ def from_unconstrained(
     Transform a tuple of unconstrained parameters and static auxiliary information to a
     distribution instance.
 
-    .. warning::
-
-        :func:`from_unconstrained` may modify its arguments in-place.
-
     Args:
         unconstrained: Unconstrained parameters.
         aux: Static auxiliary information, including the distribution type a the
@@ -144,7 +140,8 @@ def _to_unconstrained_base_dist(base_dist, arg_constraints=None):
 def _from_unconstrained_base_dist(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ) -> distributions.Distribution:
-    aux = aux.copy()
+    # This one modifies the aux information in place. That's fine because we always copy
+    # in the calling function.
     return from_unconstrained(
         unconstrained.pop("base"),
         aux.pop("base"),
