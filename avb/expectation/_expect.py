@@ -6,7 +6,7 @@ from numpyro import distributions
 import operator
 from typing import Any
 from ..dispatch import valuedispatch
-from ..distributions import LinearDynamicalSystem, Reshaped
+from ..distributions import LinearDynamicalSystem, PrecisionNormal, Reshaped
 from ..nodes import DelayedValue, Operator
 from ..util import multidigamma
 
@@ -23,10 +23,18 @@ def _expected_delayed_value(self: DelayedValue, expr: Any = 1) -> jnp.ndarray:
     return expect(self.value, expr)
 
 
-@expect.register
+@expect.register(distributions.Independent)
+@expect.register(distributions.Normal)
+@expect.register(PrecisionNormal)
 def _expect_distribution(
     self: distributions.Distribution, expr: Any = 1
 ) -> jnp.ndarray:
+    """
+    Generic expectations for distributions. We do not register the base class
+    :class:`numpyro.distributions.Distribution` to avoid accidental incorrect results
+    for distributions with different properties. Further distributions can be registered
+    by calling :code:`expect.register(cls, _expect_distribution)`.
+    """
     if expr == 1:
         return self.mean
     elif expr == 2:
