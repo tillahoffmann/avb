@@ -86,6 +86,13 @@ class DelayedValue(Node):
             return f"{cls}('{self.name}', value={value})"
         return f"{cls}(value={value})"
 
+    @classmethod
+    def materialize(cls, arg, *args):
+        arg = arg.value if isinstance(arg, cls) else arg
+        if not args:
+            return arg
+        return (arg, *(x.value if isinstance(x, cls) else x for x in args))
+
 
 class delay(Messenger):
     def process_message(self, msg):
