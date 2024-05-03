@@ -86,6 +86,18 @@ OPERATOR_CONFIGS = [
         ),
         (1, 2, "var", "log"),
     ),
+    (
+        Operator(
+            builtin_operator.add,
+            distributions.Normal(rng.normal((3,)), 0.2),
+            Operator(
+                builtin_operator.getitem,
+                distributions.Normal(rng.normal((10, 5)), 0.2),
+                (..., slice(0, 6, 2)),
+            ),
+        ),
+        (1, 2, "var"),
+    ),
 ]
 
 
