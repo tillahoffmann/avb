@@ -15,23 +15,30 @@ def classdispatch(func):
     return _classdispatch_wrapper
 
 
-def valuedispatch(func=None, *, key=None):
+def valuedispatch(func=None, *, key=None, argnum=0):
     """
     Dispatch on a hashable value.
+
+    Args:
+        key: Key function to determine the dispatched function; defaults to the
+            identity function.
+        argnum: Index of the argument to use as the key; defaults to :code:`0`, the
+            first argument.
     """
 
     if func is None:
-        return functools.partial(valuedispatch, key=key)
+        return functools.partial(valuedispatch, key=key, argnum=argnum)
 
     registry = {}
 
     @functools.wraps(func)
-    def _valuedispatch_wrapper(value, *args, **kwargs):
+    def _valuedispatch_wrapper(*args, **kwargs):
         try:
+            value = args[argnum]
             impl = registry[value if key is None else key(value)]
         except KeyError:
             impl = func
-        return impl(value, *args, **kwargs)
+        return impl(*args, **kwargs)
 
     def _valuedispatch_register(value, func=None):
         if func is None:
