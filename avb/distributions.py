@@ -86,6 +86,7 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
         "innovation_precision": distributions.constraints.positive_definite,
         "n_steps": distributions.constraints.positive_integer,
     }
+    support = distributions.constraints.real_matrix
 
     def __init__(
         self,
