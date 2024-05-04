@@ -137,41 +137,41 @@ def test_expect_operator(operator: Operator, expr: Any) -> None:
     ifnt.testing.assert_samples_close(x, avb.expect(operator, expr))
 
 
-@pytest.mark.parametrize(
-    "cls, params",
-    [
-        (
-            distributions.Gamma,
-            {"concentration": 4.2, "rate": distributions.Gamma(10, 5)},
-        ),
-        (
-            avb.distributions.PrecisionNormal,
-            {
-                "loc": distributions.Normal(0.5, 1.2),
-                "precision": distributions.Gamma(7.5, 9),
-            },
-        ),
-        (
-            distributions.Wishart,
-            {"concentration": 7, "rate_matrix": distributions.Wishart(20, jnp.eye(3))},
-        ),
-        (
-            distributions.MultivariateNormal,
-            {
-                "loc": distributions.Normal().expand((3,)).to_event(),
-                "precision_matrix": distributions.Wishart(20, jnp.eye(3)),
-            },
-        ),
-        (
-            avb.distributions.LinearDynamicalSystem,
-            {
-                "transition_matrix": rng.normal((2, 2)),
-                "innovation_precision": distributions.Wishart(20, jnp.eye(2)),
-                "n_steps": 5,
-            },
-        ),
-    ],
-)
+DELAYED_DISTRIBUTION_CONFIGS = [
+    (
+        distributions.Gamma,
+        {"concentration": 4.2, "rate": distributions.Gamma(10, 5)},
+    ),
+    (
+        avb.distributions.PrecisionNormal,
+        {
+            "loc": distributions.Normal(0.5, 1.2),
+            "precision": distributions.Gamma(7.5, 9),
+        },
+    ),
+    (
+        distributions.Wishart,
+        {"concentration": 7, "rate_matrix": distributions.Wishart(20, jnp.eye(3))},
+    ),
+    (
+        distributions.MultivariateNormal,
+        {
+            "loc": distributions.Normal().expand((3,)).to_event(),
+            "precision_matrix": distributions.Wishart(20, jnp.eye(3)),
+        },
+    ),
+    (
+        avb.distributions.LinearDynamicalSystem,
+        {
+            "transition_matrix": rng.normal((2, 2)),
+            "innovation_precision": distributions.Wishart(20, jnp.eye(2)),
+            "n_steps": 5,
+        },
+    ),
+]
+
+
+@pytest.mark.parametrize("cls, params", DELAYED_DISTRIBUTION_CONFIGS)
 def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) -> None:
     # Create an instance of the distribution which will later serve as the "value".
     rng = ifnt.random.JaxRandomState(75)
@@ -212,3 +212,20 @@ def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) ->
     ifnt.testing.assert_samples_close(
         log_probs, avb.expect_log_prob(cls, dist, **params)
     )
+
+
+@pytest.mark.parametrize("cls, params", DELAYED_DISTRIBUTION_CONFIGS)
+def test_infers_shapes(cls, params):
+    # Not technically to do with expectations, but useful for the shared configurations
+    # here.
+    delayed_dist = avb.nodes.DelayedDistribution(cls, **params)
+    materialized_params = {
+        key: (
+            arg.sample(rng.get_key())
+            if isinstance(arg, distributions.Distribution)
+            else arg
+        )
+        for key, arg in params.items()
+    }
+    dist = cls(**materialized_params)
+    assert delayed_dist.shape == dist.shape()

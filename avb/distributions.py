@@ -5,6 +5,8 @@ import math
 from numpyro import distributions
 from numpyro.distributions.util import lazy_property
 from typing import Optional
+from .nodes import DelayedDistribution
+from .util import get_shape
 
 
 class PrecisionNormal(distributions.Normal):
@@ -92,7 +94,7 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
         self,
         transition_matrix: jnp.ndarray,
         innovation_precision: jnp.ndarray,
-        n_steps: int = 1,
+        n_steps: int,
         *,
         validate_args=None,
     ) -> None:
@@ -219,3 +221,15 @@ class Reshaped(distributions.Distribution):
 
     def entropy(self):
         return self.base_dist.entropy().reshape(self.batch_shape)
+
+
+# Override infer shapes because we need to access the number of steps.
+@DelayedDistribution.infer_shapes.register(LinearDynamicalSystem)
+def _infer_shapes_linear_dynamical_system(
+    cls,
+    transition_matrix: jnp.ndarray,
+    innovation_precision: jnp.ndarray,
+    n_steps,
+) -> tuple:
+    *batch_shape, _, p = get_shape(innovation_precision)
+    return (*batch_shape, n_steps, p)

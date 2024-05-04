@@ -1,5 +1,6 @@
 from jax import numpy as jnp
 from jax.scipy import special
+import numbers
 from numpyro import distributions
 
 
@@ -27,3 +28,12 @@ def as_distribution(value, event_dim=None):
             )
         return value
     return distributions.Delta(value, event_dim=event_dim)
+
+
+def get_shape(x) -> tuple:
+    if isinstance(x, numbers.Number):
+        return ()
+    elif isinstance(x, distributions.Distribution):
+        return x.shape()
+    else:
+        return x.shape
