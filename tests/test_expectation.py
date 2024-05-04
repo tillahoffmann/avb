@@ -1,11 +1,10 @@
 import avb
-from avb.nodes import Operator
+from avb.nodes import AddOperator, GetItemOperator, MatMulOperator, Operator
 import functools
 import ifnt
 import jax
 from jax import numpy as jnp
 from numpyro import distributions
-import operator as builtin_operator
 import pytest
 from typing import Any, Type
 
@@ -71,35 +70,27 @@ def test_expect_distribution(
 # check.
 OPERATOR_CONFIGS = [
     (
-        Operator(
-            builtin_operator.add,
-            distributions.Normal(1.4, 0.2),
-            distributions.Normal(3.4, 0.3),
-        ),
+        AddOperator(distributions.Normal(1.4, 0.2), distributions.Normal(3.4, 0.3)),
         (1, 2, "var"),
     ),
     (
-        Operator(
-            builtin_operator.matmul,
+        MatMulOperator(
             distributions.Normal(1.4 * jnp.ones((3, 2)), 0.2).to_event(1),
             distributions.Normal(3.4 * jnp.ones(2), 0.3).to_event(),
         ),
         (1, 2, "var"),
     ),
     (
-        Operator(
-            builtin_operator.getitem,
+        GetItemOperator(
             distributions.Gamma(rng.gamma(10, (5, 2)), 0.2),
             (Ellipsis, jnp.asarray([2, 4]), slice(None)),
         ),
         (1, 2, "var", "log"),
     ),
     (
-        Operator(
-            builtin_operator.add,
+        AddOperator(
             distributions.Normal(rng.normal((3,)), 0.2),
-            Operator(
-                builtin_operator.getitem,
+            GetItemOperator(
                 distributions.Normal(rng.normal((10, 5)), 0.2),
                 (..., slice(0, 6, 2)),
             ),
