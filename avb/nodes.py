@@ -118,15 +118,26 @@ class DelayedValue(Node):
         assert not isinstance(value, Node), "Delayed values cannot be nested."
         self._value = value
         self.name = name
-        self.shape = shape
-        if value is not None and shape is not None:
+        if value is not None:
+            # Get the shape of the value.
             if isinstance(value, distributions.Distribution):
                 value_shape = value.shape()
             elif isinstance(value, numbers.Number):
                 value_shape = ()
             else:
                 value_shape = value.shape
-            assert value_shape == shape
+
+            # Infer the shape if not given.
+            if shape is None:
+                shape = value_shape
+            # Compare with the expected shape if given.
+            elif value_shape != shape:
+                raise ValueError(
+                    f"Expected shape `{shape}` but got `{value_shape}` for parameter "
+                    f"named `{self.name}`."
+                )
+
+        self.shape = shape
 
     @property
     def has_value(self):
