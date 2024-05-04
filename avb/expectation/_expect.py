@@ -3,11 +3,9 @@ import ifnt
 from jax import numpy as jnp
 from jax.scipy.special import digamma
 from numpyro import distributions
-import operator
 from typing import Any
-from ..dispatch import valuedispatch
 from ..distributions import LinearDynamicalSystem, PrecisionNormal, Reshaped
-from ..nodes import DelayedValue, Operator
+from ..nodes import AddOperator, DelayedValue, GetItemOperator, MatMulOperator
 from ..util import multidigamma
 
 
@@ -160,18 +158,7 @@ def _expect_linear_dynamical_system(
 
 
 @expect.register
-def _expect_operator_node(self: Operator, expr: Any = 1) -> jnp.ndarray:
-    # Dispatch from an operator instance to the specific operation we're evaluating.
-    return _expect_operator(self, expr)
-
-
-@valuedispatch(key=lambda x: x.operator)
-def _expect_operator(self: Operator, expr: Any = 1) -> jnp.ndarray:
-    raise NotImplementedError
-
-
-@_expect_operator.register(operator.matmul)
-def _expect_operator_matmul(self: Operator, expr: Any = 1) -> jnp.ndarray:
+def _expect_operator_matmul(self: MatMulOperator, expr: Any = 1) -> jnp.ndarray:
     # FIXME: We only support a design matrix and coefficient vector but complain
     # extensively to avoid unexpected behavior.
     a, b = DelayedValue.materialize(*self.args)
@@ -199,8 +186,8 @@ def _expect_operator_matmul(self: Operator, expr: Any = 1) -> jnp.ndarray:
         raise NotImplementedError(expr)
 
 
-@_expect_operator.register(operator.add)
-def _expect_operator_add(self: Operator, expr: Any = 1) -> jnp.ndarray:
+@expect.register
+def _expect_operator_add(self: AddOperator, expr: Any = 1) -> jnp.ndarray:
     if expr == 1:
         return sum(expect(arg) for arg in self.args)
     elif expr == 2:
@@ -213,7 +200,7 @@ def _expect_operator_add(self: Operator, expr: Any = 1) -> jnp.ndarray:
         raise NotImplementedError
 
 
-@_expect_operator.register(operator.getitem)
-def _expect_operator_getitem(self: Operator, expr: Any = 1) -> jnp.ndarray:
+@expect.register
+def _expect_operator_getitem(self: GetItemOperator, expr: Any = 1) -> jnp.ndarray:
     arg, key = self.args
     return ifnt.index_guard(expect(arg, expr))[key]

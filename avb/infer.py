@@ -5,6 +5,7 @@ from numpyro import handlers
 from typing import Callable, Dict, Union
 from .expectation import expect_log_prob
 from .nodes import delay, DelayedDistribution, DelayedValue
+from .unconstrained import approximation_from_unconstrained
 
 
 def expect_log_joint(
@@ -73,3 +74,28 @@ def elbo_loss(model: Callable, approximation: Dict) -> Callable[..., jnp.ndarray
         return -log_joint_fn(*args, **kwargs) - entropy
 
     return _elbo_wrapper
+
+
+def elbo_loss_from_unconstrained(
+    model: Callable, aux: Dict, *, validate_args=None
+) -> Callable[..., jnp.ndarray]:
+    """
+    Transform a model to evaluate the *negative* evidence lower bound under a posterior
+    approximation defined by unconstrained, optimizable parameters.
+
+    Args:
+        model: Model to transform.
+        aux: Static auxiliary information keyed by factor name.
+        validate_args: Validate distribution arguments.
+
+    Returns:
+        Callable evaluating the evidence lower bound given unconstrained parameters.
+    """
+
+    def _elbo_loss_from_unconstrained(unconstrained: Dict, *args, **kwargs):
+        approximation = approximation_from_unconstrained(
+            unconstrained, aux, validate_args=validate_args
+        )
+        return elbo_loss(model, approximation)(*args, **kwargs)
+
+    return _elbo_loss_from_unconstrained
