@@ -109,6 +109,7 @@ class GetItemOperator(Operator):
         # Create a static numpy array, index, and return the shape. This *should* be
         # optimized away by the XLA compiler.
         import numpy as np
+
         a, b = self.args
         return np.empty(a.shape)[b].shape
 
