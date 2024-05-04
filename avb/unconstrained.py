@@ -1,4 +1,5 @@
 import functools
+import math
 from numpyro import distributions
 from typing import Dict, Tuple
 from .dispatch import valuedispatch
@@ -109,6 +110,7 @@ def from_unconstrained(
 @to_unconstrained.register
 def _to_unconstrained_wishart(self: distributions.Wishart, arg_constraints=None):
     _, p = self.event_shape
+    arg_constraints = arg_constraints or {}
     arg_constraints.setdefault(
         "concentration", distributions.constraints.greater_than(p - 1)
     )
@@ -119,7 +121,11 @@ def _to_unconstrained_wishart(self: distributions.Wishart, arg_constraints=None)
 def _from_unconstrained_wishart(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ):
-    p = unconstrained["rate_matrix"].shape[-1]
+    # Get the dimensionality of the matrix which we need for the constraint of the
+    # concentration parameter.
+    unconstrained_p = unconstrained["rate_matrix"].shape[-1]
+    p = round((math.sqrt(1 + 8 * unconstrained_p) - 1) / 2)
+    arg_constraints = arg_constraints or {}
     arg_constraints.setdefault(
         "concentration", distributions.constraints.greater_than(p - 1)
     )

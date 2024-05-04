@@ -1,6 +1,7 @@
 import avb
 import ifnt
 import jax
+from jax import numpy as jnp
 from numpyro import distributions
 import pytest
 
@@ -23,6 +24,7 @@ rng = ifnt.random.JaxRandomState(43)
             batch_shape=(91,),
             event_shape=(6, 2),
         ),
+        distributions.Wishart(9, jnp.eye(3)),
     ],
 )
 def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
