@@ -124,12 +124,8 @@ class GetItemOperator(Operator):
 
     @property
     def shape(self) -> tuple:
-        # Create a static numpy array, index, and return the shape. This *should* be
-        # optimized away by the XLA compiler.
-        import numpy as np
-
         a, b = self.args
-        return np.empty(a.shape)[b].shape
+        return jnp.empty(a.shape)[b].shape
 
 
 class DelayedValue(Node):
