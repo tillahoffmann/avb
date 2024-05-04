@@ -115,26 +115,8 @@ def test_elbo_linear_model() -> None:
         ),
         "intercept": PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
     }
-    elbo = avb.elbo_loss(conditioned, approximation)(n, p, delay=True)
 
-    def guide(*args, **kwargs):
-        return {
-            name: numpyro.sample(name, dist) for name, dist in approximation.items()
-        }
-
-    trace_elbo = numpyro.infer.Trace_ELBO()
-    n_samples = 1000
-    trace_elbos = []
-    for _ in range(n_samples):
-        params = numpyro.handlers.seed(guide, rng.get_key())()
-        trace_elbos.append(
-            trace_elbo.loss(
-                rng.get_key(), params, conditioned, guide, n, p, delay=False
-            )
-        )
-    trace_elbos = jnp.stack(trace_elbos)
-
-    ifnt.testing.assert_samples_close(trace_elbos, elbo)
+    avb.infer.validate_elbo(conditioned, approximation)(rng.get_key(), n, p, delay=True)
 
 
 def test_end_to_end_linear_model() -> None:

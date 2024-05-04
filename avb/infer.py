@@ -1,10 +1,12 @@
 import functools
 import ifnt
+import jax
 from jax import numpy as jnp
-from numpyro import handlers
+import numpyro
+from numpyro import distributions, handlers
 from typing import Callable, Dict, Union
 from .expectation import expect_log_prob
-from .nodes import delay, DelayedDistribution, DelayedValue
+from .nodes import delay, DelayedDistribution, DelayedValue, materialize
 from .unconstrained import approximation_from_unconstrained
 
 
@@ -99,3 +101,71 @@ def elbo_loss_from_unconstrained(
         return elbo_loss(model, approximation)(*args, **kwargs)
 
     return _elbo_loss_from_unconstrained
+
+
+def guide_from_approximation(
+    approximation: Dict[str, distributions.Distribution]
+) -> Callable:
+    """
+    Create a numpyro guide from a factorized approximation.
+
+    Args:
+        approximation: Mapping of site names to variational factors.
+
+    Returns:
+        Callable guide.
+    """
+
+    def _guide_from_approximation_wrapper(*args, **kwargs) -> None:
+        for name, dist in approximation.items():
+            numpyro.sample(name, dist)
+
+    return _guide_from_approximation_wrapper
+
+
+def validate_elbo(
+    model: Callable,
+    approximation: Dict[str, distributions.Distribution],
+    n_samples: int = 1000,
+    **samples_close_kwargs
+) -> Callable:
+    """
+    Validate evidence lower bound of the model under the variational approximation by
+    comparing with a Monte Carlo estimate using numpyro.
+
+    Args:
+        model: Model to validate.
+        approximation: Variational factors to validate.
+        n_samples: Number of Monte Carlo samples.
+        **samples_close_kwargs: Keyword arguments passed to
+            :func:`ifnt.testing.assert_samples_close`.
+    """
+
+    def _validate_elbo_wrapper(key, *args, **kwargs):
+        # Evaluate the elbo analytically.
+        expected = elbo_loss(model, approximation)(*args, **kwargs)
+
+        # Create a guide from the factorized approximation and materialize the model
+        # so there are only concrete numpyro.distributions.Distribution rather than
+        # DelayedDistribution wrappers.
+        guide = guide_from_approximation(approximation)
+        materialized_model = materialize(model)
+
+        # Scan to get elbo samples.
+        def _body(key, _):
+            key, guide_key, model_key = jax.random.split(key, 3)
+            seeded_guide = numpyro.handlers.seed(guide, guide_key)
+            with handlers.trace() as trace:
+                seeded_guide(*args, **kwargs)
+            params = {name: site["value"] for name, site in trace.items()}
+            trace_elbo = numpyro.infer.Trace_ELBO()
+            loss = trace_elbo.loss(
+                model_key, params, materialized_model, guide, *args, **kwargs
+            )
+            return key, loss
+
+        _, elbos = jax.lax.scan(_body, key, jnp.arange(n_samples))
+
+        ifnt.testing.assert_samples_close(elbos, expected, **samples_close_kwargs)
+
+    return _validate_elbo_wrapper

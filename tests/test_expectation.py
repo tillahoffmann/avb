@@ -219,4 +219,4 @@ def test_infers_shapes(cls, params):
         for key, arg in params.items()
     }
     dist = cls(**materialized_params)
-    assert delayed_dist.shape == dist.shape()
+    assert delayed_dist.shape((17,)) == dist.shape((17,))

@@ -5,7 +5,7 @@ import math
 from numpyro import distributions
 from numpyro.distributions.util import lazy_property
 from typing import Optional
-from .nodes import DelayedDistribution
+from .nodes import delay_infer_shapes
 from .util import get_shape
 
 
@@ -224,7 +224,7 @@ class Reshaped(distributions.Distribution):
 
 
 # Override infer shapes because we need to access the number of steps.
-@DelayedDistribution.infer_shapes.register(LinearDynamicalSystem)
+@delay_infer_shapes.register(LinearDynamicalSystem)
 def _infer_shapes_linear_dynamical_system(
     cls,
     transition_matrix: jnp.ndarray,
@@ -232,4 +232,4 @@ def _infer_shapes_linear_dynamical_system(
     n_steps,
 ) -> tuple:
     *batch_shape, _, p = get_shape(innovation_precision)
-    return (*batch_shape, n_steps, p)
+    return tuple(batch_shape), (n_steps, p)

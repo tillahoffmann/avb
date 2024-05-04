@@ -34,6 +34,8 @@ class DelayedDistribution(Generic[D]):
         self.args = args
         self.kwargs = kwargs
         self._instance = None
+        self._batch_shape = None
+        self._event_shape = None
 
     def __call__(self, *args, **kwargs):
         return self.instance(*args, **kwargs)
@@ -47,18 +49,34 @@ class DelayedDistribution(Generic[D]):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.cls.__name__}, ...)"
 
-    @property
-    def shape(self) -> tuple:
-        return self.infer_shapes(self.cls, *self.args, **self.kwargs)
+    def shape(self, sample_shape=()) -> tuple:
+        return sample_shape + self.batch_shape + self.event_shape
 
-    @staticmethod
-    @classdispatch
-    def infer_shapes(cls: Type[distributions.Distribution], *args, **kwargs) -> tuple:
-        batch_shape, event_shape = cls.infer_shapes(
-            *(get_shape(arg) for arg in args),
-            **{key: get_shape(arg) for key, arg in kwargs.items()},
+    @property
+    def batch_shape(self):
+        if self._batch_shape is None:
+            self._infer_shapes()
+        return self._batch_shape
+
+    @property
+    def event_shape(self):
+        if self._event_shape is None:
+            self._infer_shapes()
+        return self._event_shape
+
+    def _infer_shapes(self) -> tuple:
+        self._batch_shape, self._event_shape = delay_infer_shapes(
+            self.cls, *self.args, **self.kwargs
         )
-        return batch_shape + event_shape
+        return self._batch_shape, self._event_shape
+
+
+@classdispatch
+def delay_infer_shapes(cls: distributions.Distribution, *args, **kwargs):
+    return cls.infer_shapes(
+        *(get_shape(arg) for arg in args),
+        **{key: get_shape(arg) for key, arg in kwargs.items()},
+    )
 
 
 class Node:
@@ -173,8 +191,27 @@ class DelayedValue(Node):
 
 
 class delay(Messenger):
+    """
+    Delay sampling to trace parameters through the model.
+    """
+
     def process_message(self, msg):
         fn = msg["fn"]
-        assert isinstance(fn, DelayedDistribution)
-        shape = msg["kwargs"].get("sample_shape", ()) + fn.shape
+        assert isinstance(
+            fn, DelayedDistribution
+        ), f"Cannot delay sampling from {fn} because it is not a `DelayedDistribution`."
+        shape = msg["kwargs"].get("sample_shape", ()) + fn.shape()
         msg["value"] = DelayedValue(msg["value"], name=msg["name"], shape=shape)
+
+
+class materialize(Messenger):
+    """
+    Materialize `DelayedDistribution`s to recover an equivalent numpyro model.
+    """
+
+    def process_message(self, msg):
+        fn = msg["fn"]
+        assert isinstance(
+            fn, DelayedDistribution
+        ), f"Cannot materialize {fn} because it is not a `DelayedDistribution`."
+        msg["fn"] = fn.instance
