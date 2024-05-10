@@ -83,8 +83,14 @@ class Node:
     def __matmul__(self, other):
         return MatMulOperator(self, other)
 
+    def __rmatmul__(self, other):
+        return MatMulOperator(other, self)
+
     def __add__(self, other):
         return AddOperator(self, other)
+
+    def __radd__(self, other):
+        return AddOperator(other, self)
 
     def __getitem__(self, other):
         return GetItemOperator(self, other)
