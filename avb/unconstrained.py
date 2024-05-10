@@ -43,6 +43,16 @@ def _to_params_lowrank_multivariate_normal(
 
 
 @to_params.register
+def _to_params_multivariate_normal(
+    self: distributions.MultivariateNormal,
+):
+    return {
+        "loc": self.loc,
+        "scale_tril": self.scale_tril,
+    }, {"cls": self.__class__}
+
+
+@to_params.register
 def _to_params_wishart(self: distributions.Wishart):
     return {
         "concentration": self.concentration,
