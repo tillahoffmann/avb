@@ -128,7 +128,7 @@ def validate_elbo(
     approximation: Dict[str, distributions.Distribution],
     n_samples: int = 1000,
     verbose: bool = True,
-    **samples_close_kwargs
+    **samples_close_kwargs,
 ) -> Callable:
     """
     Validate evidence lower bound of the model under the variational approximation by
