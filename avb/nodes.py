@@ -171,7 +171,10 @@ class DelayedValue(Node):
         return self._value
 
     def __repr__(self):
-        value = self.value
+        if self.has_value:
+            value = self.value
+        else:
+            value = None
         if isinstance(value, jnp.ndarray):
             value = f"Array(shape={value.shape}, dtype={value.dtype})"
         elif isinstance(value, distributions.Distribution):
@@ -179,6 +182,8 @@ class DelayedValue(Node):
                 f"{value.__class__.__name__}(batch_shape={value.batch_shape}, "
                 f"event_shape={value.event_shape})"
             )
+        else:
+            value = self.value
         cls = self.__class__.__name__
         if self.name:
             return f"{cls}('{self.name}', value={value})"
