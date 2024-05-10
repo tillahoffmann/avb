@@ -109,7 +109,11 @@ class LinearDynamicalSystem(distributions.TransformedDistribution):
                 self.innovation_precision[..., None, :, :], self.n_steps, axis=-3
             ),
         )
-        assert innovation_distribution.event_shape == (p,)
+        assert innovation_distribution.event_shape == (p,), (
+            "Innovation distribution event shape "
+            f"{innovation_distribution.event_shape} "
+            f"is not compatible with transition matrix shape {transition_matrix.shape}"
+        )
         assert innovation_distribution.batch_shape == innovation_precision.shape[
             :-2
         ] + (n_steps,)

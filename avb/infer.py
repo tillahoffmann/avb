@@ -36,9 +36,16 @@ def expect_log_joint(
         for name, site in trace.items():
             fn = site["fn"]
             value = site["value"]
-            assert isinstance(fn, DelayedDistribution)
-            assert isinstance(value, DelayedValue)
-            assert value.has_value
+            name = site["name"]
+            assert isinstance(fn, DelayedDistribution), (
+                f"Distribution for site '{name}' must be an instance of "
+                f"`DelayedDistribution` but got {fn}."
+            )
+            assert isinstance(value, DelayedValue), (
+                f"Value for site '{name}' must be an instance of `DelayedValue` but "
+                f"got {value}."
+            )
+            assert value.has_value, f"Site '{name}' must have a value."
             elp = expect_log_prob(
                 fn.cls,
                 value,
