@@ -127,6 +127,7 @@ def validate_elbo(
     model: Callable,
     approximation: Dict[str, distributions.Distribution],
     n_samples: int = 1000,
+    verbose: bool = True,
     **samples_close_kwargs
 ) -> Callable:
     """
@@ -137,6 +138,7 @@ def validate_elbo(
         model: Model to validate.
         approximation: Variational factors to validate.
         n_samples: Number of Monte Carlo samples.
+        verbose: Print information about the validation.
         **samples_close_kwargs: Keyword arguments passed to
             :func:`ifnt.testing.assert_samples_close`.
     """
@@ -167,5 +169,17 @@ def validate_elbo(
         _, elbos = jax.lax.scan(_body, key, jnp.arange(n_samples))
 
         ifnt.testing.assert_samples_close(elbos, expected, **samples_close_kwargs)
+
+        if verbose:
+            mean = elbos.mean()
+            stderr = elbos.std() / jnp.sqrt(n_samples - 1)
+            z = (expected - mean) / stderr
+
+            print(
+                f"Sample mean {mean} with standard error {stderr} is consistent with "
+                f"the analytical value {expected} (z-score = {z})."
+            )
+
+        return elbos, expected
 
     return _validate_elbo_wrapper
