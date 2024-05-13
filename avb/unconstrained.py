@@ -156,8 +156,6 @@ def _to_unconstrained_base_dist(base_dist, arg_constraints=None):
 def _from_unconstrained_base_dist(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ) -> distributions.Distribution:
-    # This one modifies the aux information in place. That's fine because we always copy
-    # in the calling function.
     return from_unconstrained(
         unconstrained.pop("base"),
         aux.pop("base"),
@@ -199,6 +197,7 @@ def _from_unconstrained_with_base_dist(
     unconstrained, aux, arg_constraints=None, *, validate_args=None
 ):
     aux = aux.copy()
+    unconstrained = unconstrained.copy()
     base_dist = _from_unconstrained_base_dist(
         unconstrained, aux, arg_constraints, validate_args=validate_args
     )
