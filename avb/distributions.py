@@ -237,3 +237,15 @@ def _infer_shapes_linear_dynamical_system(
 ) -> tuple:
     *batch_shape, _, p = get_shape(innovation_precision)
     return tuple(batch_shape), (n_steps, p)
+
+
+class PoissonLogits(distributions.Poisson):
+
+    arg_constraints = {
+        "logits": distributions.constraints.real,
+    }
+
+    def __init__(self, logits, *, is_sparse=False, validate_args=None):
+        super().__init__(
+            jnp.exp(logits), is_sparse=is_sparse, validate_args=validate_args
+        )

@@ -21,9 +21,15 @@ def _expected_delayed_value(self: DelayedValue, expr: Any = 1) -> jnp.ndarray:
     return expect(self.value, expr)
 
 
-@expect.register(distributions.Independent)
 @expect.register(distributions.Normal)
 @expect.register(PrecisionNormal)
+def _expect_normal(self: distributions.Distribution, expr: Any = 1) -> jnp.ndarray:
+    if expr == "exp":
+        return jnp.exp(self.mean + self.variance / 2)
+    return _expect_distribution(self, expr)
+
+
+@expect.register(distributions.Independent)
 def _expect_distribution(
     self: distributions.Distribution, expr: Any = 1
 ) -> jnp.ndarray:
@@ -119,6 +125,8 @@ def _expect_literal(self, expr=1):
         )
     elif expr == "logabsdet":
         return jnp.linalg.slogdet(self).logabsdet
+    elif expr == "exp":
+        return jnp.exp(self)
     else:
         raise NotImplementedError(self, expr)
 

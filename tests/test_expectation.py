@@ -159,6 +159,12 @@ DELAYED_DISTRIBUTION_CONFIGS = [
             "n_steps": 5,
         },
     ),
+    (
+        avb.distributions.PoissonLogits,
+        {
+            "logits": distributions.Normal(0.3, 0.5),
+        },
+    ),
 ]
 
 
@@ -176,11 +182,24 @@ def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) ->
     }
     dist = cls(**instance_params)
 
+    # If expect_log_prob supports a distribution for the value rather than just
+    # arguments.
+    if isinstance(dist, avb.distributions.PoissonLogits):
+        supports_dist_value = False
+    else:
+        supports_dist_value = True
+
     # Sanity check that the expected log probability is correct for a point mass.
     x = dist.sample(rng.get_key())
     ifnt.testing.assert_allclose(
         avb.expect_log_prob(
-            cls, distributions.Delta(x, event_dim=dist.event_dim), **instance_params
+            cls,
+            (
+                distributions.Delta(x, event_dim=dist.event_dim)
+                if supports_dist_value
+                else x
+            ),
+            **instance_params
         ),
         dist.log_prob(x),
         rtol=1e-5,
@@ -197,11 +216,12 @@ def test_expect_log_prob(cls: Type[distributions.Distribution], params: dict) ->
         )
         for key, value in params.items()
     }
-    values = dist.sample(rng.get_key(), (n_samples,))
+    values = dist.sample(rng.get_key(), (n_samples,) if supports_dist_value else ())
     log_probs = cls(**expect_params).log_prob(values)
 
     ifnt.testing.assert_samples_close(
-        log_probs, avb.expect_log_prob(cls, dist, **params)
+        log_probs,
+        avb.expect_log_prob(cls, dist if supports_dist_value else values, **params),
     )
 
 
