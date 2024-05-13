@@ -165,4 +165,5 @@ def _expect_log_prob_linear_dynamical_system(
 
 @expect_log_prob.register(PoissonLogits)
 def _expect_log_prob_poisson(cls, value: jnp.ndarray, logits) -> jnp.ndarray:
+    value = DelayedValue.materialize(value)
     return -expect(logits, "exp") + expect(logits) * value - gammaln(value + 1)

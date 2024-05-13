@@ -29,7 +29,14 @@ def _expect_normal(self: distributions.Distribution, expr: Any = 1) -> jnp.ndarr
     return _expect_distribution(self, expr)
 
 
-@expect.register(distributions.Independent)
+@expect.register
+def _expect_independent(self: distributions.Independent, expr: Any = 1) -> jnp.ndarray:
+    if expr == "exp":
+        return expect(self.base_dist, expr)
+    return _expect_distribution(self, expr)
+
+
+@expect.register
 def _expect_distribution(
     self: distributions.Distribution, expr: Any = 1
 ) -> jnp.ndarray:
@@ -80,6 +87,8 @@ def _expect_delta(self: distributions.Delta, expr: Any = 1) -> jnp.ndarray:
         return jnp.log(self.v)
     elif expr == "logabsdet":
         return jnp.linalg.slogdet(self.v).logabsdet
+    elif expr == "exp":
+        return jnp.exp(self.v)
     else:
         return _expect_distribution(self, expr)
 
@@ -190,8 +199,17 @@ def _expect_operator_matmul(self: MatMulOperator, expr: Any = 1) -> jnp.ndarray:
         return _expect_operator_matmul(self, 2) - jnp.square(
             _expect_operator_matmul(self)
         )
+    elif expr == "exp":
+        # FIXME: This only works for a and b having independent elements.
+        ma = expect(a)
+        mb = expect(b)
+        va = expect(a, "var")
+        vb = expect(b, "var")
+        norm = 1 - va * vb
+        arg = (2 * ma * mb + mb**2 * va + ma**2 * vb) / (2 * norm)
+        return (jnp.exp(arg) / jnp.sqrt(norm)).prod(axis=-1)
     else:
-        raise NotImplementedError(expr)
+        raise NotImplementedError(self, expr)
 
 
 @expect.register
@@ -204,8 +222,13 @@ def _expect_operator_add(self: AddOperator, expr: Any = 1) -> jnp.ndarray:
         )
     elif expr == "var":
         return sum(expect(arg, expr="var") for arg in self.args)
+    elif expr == "exp":
+        value = 1.0
+        for arg in self.args:
+            value = value * expect(arg, "exp")
+        return value
     else:
-        raise NotImplementedError
+        raise NotImplementedError(self, expr)
 
 
 @expect.register

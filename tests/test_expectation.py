@@ -71,14 +71,14 @@ def test_expect_distribution(
 OPERATOR_CONFIGS = [
     (
         AddOperator(distributions.Normal(1.4, 0.2), distributions.Normal(3.4, 0.3)),
-        (1, 2, "var"),
+        (1, 2, "var", "exp"),
     ),
     (
         MatMulOperator(
             distributions.Normal(1.4 * jnp.ones((3, 2)), 0.2).to_event(1),
             distributions.Normal(3.4 * jnp.ones(2), 0.3).to_event(),
         ),
-        (1, 2, "var"),
+        (1, 2, "var", "exp"),
     ),
     (
         GetItemOperator(
@@ -95,7 +95,7 @@ OPERATOR_CONFIGS = [
                 (..., slice(0, 6, 2)),
             ),
         ),
-        (1, 2, "var"),
+        (1, 2, "var", "exp"),
     ),
 ]
 
