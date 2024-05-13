@@ -1,5 +1,5 @@
 import avb
-from avb.distributions import PrecisionNormal
+from avb.distributions import PoissonLogits, PrecisionNormal
 import functools
 import ifnt
 import jax
@@ -22,8 +22,10 @@ def linear_model(n=7, p=2, *, delay) -> None:
         "coef", new(distributions.MultivariateNormal, jnp.zeros(p), jnp.eye(p))
     )
     tau = numpyro.sample("tau", new(distributions.Gamma, 4, 1))
-    y_hat = intercept + X @ coef
-    numpyro.sample("y", new(PrecisionNormal, y_hat, tau))
+    # Observation-level random effects for overdispersion.
+    olre = numpyro.sample("olre", new(PrecisionNormal, jnp.zeros(n), tau))
+    y_hat = intercept + olre + X @ coef
+    numpyro.sample("y", new(PoissonLogits, y_hat))
 
 
 def test_delayed_eager_equivalence_and_structure() -> None:
@@ -43,7 +45,7 @@ def test_delayed_eager_equivalence_and_structure() -> None:
     with numpyro.handlers.trace() as delayed_trace, avb.delay():
         numpyro.handlers.trace(linear_model).get_trace(delay=True)
 
-    assert set(delayed_trace) == {"X", "y", "coef", "intercept", "tau"}
+    assert set(delayed_trace) == {"X", "y", "coef", "intercept", "tau", "olre"}
     for name, site in delayed_trace.items():
         assert isinstance(site["value"], avb.nodes.DelayedValue), name
         assert isinstance(site["fn"], avb.nodes.DelayedDistribution), name
@@ -64,6 +66,7 @@ def test_expect_log_joint_linear_model() -> None:
         "tau": distributions.Gamma(*(rng.gamma(10, (2,)) / 10)),
         "coef": PrecisionNormal(rng.normal((p,)), rng.gamma(7, (p,)) / 7).to_event(),
         "intercept": PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
+        "olre": PrecisionNormal(rng.normal((n,)), rng.gamma(100, (n,))),
     }
     elp = avb.expect_log_joint(conditioned, approximation, aggregate=False)(
         n, p, delay=True
@@ -92,11 +95,8 @@ def test_expect_log_joint_linear_model() -> None:
             )
 
     log_densities = {key: jnp.stack(value) for key, value in log_densities.items()}
-    jax.tree.map(
-        functools.partial(ifnt.testing.assert_samples_close, atol=1e-5),
-        log_densities,
-        jax.tree.map(jnp.sum, elp),
-    )
+    for key, value in log_densities.items():
+        ifnt.testing.assert_samples_close(value, elp[key].sum(), atol=1e-5)
 
 
 def test_elbo_linear_model() -> None:
@@ -114,6 +114,7 @@ def test_elbo_linear_model() -> None:
             rng.normal((p,)), jnp.eye(p) * rng.gamma(7, (p,)) / 7
         ),
         "intercept": PrecisionNormal(rng.normal(), rng.gamma(11) / 9),
+        "olre": PrecisionNormal(rng.normal((n,)), rng.gamma(100, (n,))),
     }
 
     avb.infer.validate_elbo(conditioned, approximation)(rng.get_key(), n, p, delay=True)
@@ -132,14 +133,16 @@ def test_end_to_end_linear_model() -> None:
     approximation = {
         "tau": distributions.Gamma(jnp.ones(()), jnp.ones(())),
         "coef": distributions.LowRankMultivariateNormal(
-            jnp.zeros(p), jnp.ones((p, 2)), jnp.ones(p)
+            jnp.zeros(p), jnp.zeros((p, 2)), 0.1 * jnp.ones(p)
         ),
-        "intercept": PrecisionNormal(jnp.ones(()), jnp.ones(())),
+        "intercept": PrecisionNormal(jnp.zeros(()), 0.1 * jnp.ones(())),
+        "olre": PrecisionNormal(jnp.zeros(n), 0.1 * jnp.ones(n)),
     }
     unconstrained, aux = avb.approximation_to_unconstrained(approximation)
     # This wrapper contains all the static information so we can jit-compile it.
     loss_fn = jax.jit(avb.elbo_loss_from_unconstrained(conditioned, aux))
-    solver = jaxopt.LBFGS(loss_fn)
+    solver = jaxopt.LBFGS(loss_fn, maxiter=1000)
     result = solver.run(unconstrained)
     approximation = avb.approximation_from_unconstrained(result.params, aux)
     assert jnp.corrcoef(approximation["coef"].mean, trace["coef"]["value"])[0, 1] > 0.99
+    assert jnp.corrcoef(approximation["olre"].mean, trace["olre"]["value"])[0, 1] > 0.5

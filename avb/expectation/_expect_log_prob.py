@@ -4,7 +4,11 @@ from jax.scipy.special import gammaln, multigammaln
 from numpyro import distributions
 from ._expect import expect
 from .. import dispatch
-from ..distributions import LinearDynamicalSystem, PrecisionNormal
+from ..distributions import (
+    LinearDynamicalSystem,
+    PoissonLogits,
+    PrecisionNormal,
+)
 from ..nodes import DelayedValue
 from ..util import as_distribution, tail_trace
 
@@ -157,3 +161,9 @@ def _expect_log_prob_linear_dynamical_system(
     ) / 2
     ifnt.testing.assert_shape(result, batch_shape)
     return result
+
+
+@expect_log_prob.register(PoissonLogits)
+def _expect_log_prob_poisson(cls, value: jnp.ndarray, logits) -> jnp.ndarray:
+    value = DelayedValue.materialize(value)
+    return -expect(logits, "exp") + expect(logits) * value - gammaln(value + 1)
