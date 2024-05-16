@@ -289,7 +289,7 @@ masks = {
 
 ```python
 # Validate the evidence lower bound is consistent with a monte carlo estimate.
-avb.infer.validate_elbo(model, approximation, 1000)(jax.random.key(13), **data)
+avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
 # Get unconstrained and auxiliary data for optimization.
 unconstrained, aux = avb.approximation_to_unconstrained(approximation)
 loss_fn = jax.jit(
@@ -329,7 +329,7 @@ def batch_update(n_steps, unconstrained, state, *args, **kwargs):
 ```python
 atol = 1e-3
 batch_size = 10
-max_iter = 10_000
+max_iter = 15_000
 
 progress = tqdm(total=max_iter)
 progress.n = int(state.iter_num)
@@ -380,6 +380,8 @@ with progress:
 
 ```python
 approximation = avb.approximation_from_unconstrained(unconstrained, aux)
+# Revalidate elbo at the optimized parameters.
+avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
 ```
 
 ```python
@@ -392,7 +394,7 @@ line, = ax.plot(mondays, loc, marker=".", markersize=5)
 ax.fill_between(mondays, loc - scale, loc + scale, color=line.get_color(), alpha=0.2)
 
 ax = axes[1]
-idx = 13
+idx = 9
 loc = approximation["B"].mean[idx, ..., 0]
 scale = jnp.sqrt(approximation["B"].variance[idx, ..., 0])
 line, = ax.plot(mondays, loc)
@@ -441,6 +443,11 @@ prediction = (
     + approximation["A"].mean[loc_id, week_id, 0]
     + approximation["B"].mean[type_id, week_id, 0]
     + approximation["C"].mean[loc_id, type_id]
+    + (X * (
+        approximation["coef"].mean 
+        + approximation["coef_loc"].mean[loc_id] 
+        + approximation["coef_type"].mean[type_id]
+    )).sum(axis=-1)
 )
 step = 10
 ax.scatter(y[::step], prediction[::step], marker=".", alpha=0.5)
