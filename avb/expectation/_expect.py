@@ -263,7 +263,7 @@ def _expect_operator_sum(self: SumOperator, expr: Any = 1) -> jnp.ndarray:
     if expr == 1:
         return expect(self.args[0], expr).sum(**self.kwargs)
     elif expr == 2:
-        return expect(self, 1)**2 + expect(self, "var")
+        return expect(self, 1) ** 2 + expect(self, "var")
     elif expr == "var":
         assert isinstance(
             self.kwargs["axis"], int

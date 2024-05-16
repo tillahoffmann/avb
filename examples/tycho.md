@@ -182,6 +182,22 @@ def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id,
             precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
         ),
     )
+    coef_loc = numpyro.sample(
+        "coef_loc",
+        avb.DelayedDistribution(
+            dists.MultivariateNormal,
+            jnp.zeros((n_locs, X.shape[-1])),
+            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
+        ),
+    )
+    coef_type = numpyro.sample(
+        "coef_type",
+        avb.DelayedDistribution(
+            dists.MultivariateNormal,
+            jnp.zeros((n_types, X.shape[-1])),
+            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
+        ),
+    )
 
     # Observations.
     tau_y = numpyro.sample("tau_y", avb.DelayedDistribution(dists.Gamma, jnp.ones((n_locs, n_types)), 1))
@@ -190,7 +206,8 @@ def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id,
         avb.DelayedDistribution(
             PrecisionNormal,
             loc=mu + a[loc_id] + b[type_id] + z[week_id, 0] + C[loc_id, type_id]
-            + A[loc_id, week_id, 0] + B[type_id, week_id, 0] + X @ coef,
+            + A[loc_id, week_id, 0] + B[type_id, week_id, 0] 
+            + (X * (coef + coef_loc[loc_id] + coef_type[type_id])).sum(axis=-1),
             precision=tau_y[loc_id, type_id]
         ),
         obs=y,
@@ -205,7 +222,7 @@ rng = ifnt.random.JaxRandomState(17)
 dynamic_data["transition_matrix"] = data["transition_matrix"] = transition_matrix
 
 loc_scale = 0.01
-var_scale = 0.1
+var_scale = 0.01
 prec_conc = 10
 prec_rate = 10
 
@@ -241,7 +258,18 @@ approximation = {
         loc_scale * rng.normal((n_locs, n_types)),
         var_scale * jnp.ones((n_locs, n_types)),
     ),
-    "coef": PrecisionNormal(loc_scale * rng.normal((X.shape[-1],)), var_scale * jnp.ones(X.shape[-1])).to_event(1),
+    "coef": PrecisionNormal(
+        loc_scale * rng.normal((X.shape[-1],)), 
+        var_scale * jnp.ones(X.shape[-1]),
+    ).to_event(1),
+    "coef_loc": PrecisionNormal(
+        loc_scale * rng.normal((n_locs, X.shape[-1])), 
+        var_scale * jnp.ones((n_locs, X.shape[-1])),
+    ).to_event(1),
+    "coef_type": PrecisionNormal(
+        loc_scale * rng.normal((n_types, X.shape[-1])), 
+        var_scale * jnp.ones((n_types, X.shape[-1])),
+    ).to_event(1),
     "tau_a": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_b": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_z": dists.Wishart(prec_conc * p, jnp.eye(p)),
@@ -261,7 +289,7 @@ masks = {
 
 ```python
 # Validate the evidence lower bound is consistent with a monte carlo estimate.
-avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
+avb.infer.validate_elbo(model, approximation, 1000)(jax.random.key(13), **data)
 # Get unconstrained and auxiliary data for optimization.
 unconstrained, aux = avb.approximation_to_unconstrained(approximation)
 loss_fn = jax.jit(
