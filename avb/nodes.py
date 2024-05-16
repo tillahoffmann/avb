@@ -95,12 +95,22 @@ class Node:
     def __getitem__(self, other):
         return GetItemOperator(self, other)
 
+    def __mul__(self, other):
+        return MulOperator(self, other)
+
+    def __rmul__(self, other):
+        return MulOperator(other, self)
+
+    def sum(self, axis=None):
+        return SumOperator(self, axis=axis)
+
 
 class Operator(Node):
     operator = None
 
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
         self.args = args
+        self.kwargs = kwargs
 
     @property
     def shape(self) -> tuple:
@@ -132,6 +142,22 @@ class GetItemOperator(Operator):
     def shape(self) -> tuple:
         a, b = self.args
         return jnp.empty(a.shape)[b].shape
+
+
+class MulOperator(Operator):
+    operator = operator.mul
+
+    @property
+    def shape(self) -> tuple:
+        return jnp.broadcast_shapes(*map(get_shape, self.args))
+
+
+class SumOperator(Operator):
+    operator = jnp.sum
+
+    @property
+    def shape(self) -> tuple:
+        return jnp.empty(self.args[0].shape).sum(**self.kwargs).shape
 
 
 class DelayedValue(Node):

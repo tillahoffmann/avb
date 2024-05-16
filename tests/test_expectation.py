@@ -1,5 +1,12 @@
 import avb
-from avb.nodes import AddOperator, GetItemOperator, MatMulOperator, Operator
+from avb.nodes import (
+    AddOperator,
+    GetItemOperator,
+    MatMulOperator,
+    MulOperator,
+    Operator,
+    SumOperator,
+)
 import functools
 import ifnt
 import jax
@@ -81,6 +88,13 @@ OPERATOR_CONFIGS = [
         (1, 2, "var", "exp"),
     ),
     (
+        MulOperator(
+            distributions.Normal(1.4 * jnp.ones((3, 2)), 0.2).to_event(1),
+            distributions.Normal(3.4 * jnp.ones(2), 0.3).to_event(),
+        ),
+        (1, 2, "var"),
+    ),
+    (
         GetItemOperator(
             distributions.Gamma(rng.gamma(10, (5, 2)), 0.2),
             (Ellipsis, jnp.asarray([2, 4]), slice(None)),
@@ -96,6 +110,13 @@ OPERATOR_CONFIGS = [
             ),
         ),
         (1, 2, "var", "exp"),
+    ),
+    (
+        SumOperator(
+            distributions.Normal(rng.normal((4, 5)), 0.3),
+            axis=-1,
+        ),
+        (1, 2, "var"),
     ),
 ]
 
@@ -114,7 +135,7 @@ def test_expect_operator(operator: Operator, expr: Any) -> None:
             elif isinstance(arg, Operator):
                 arg = _sample_operator(subkey, arg)
             args.append(arg)
-        return operator.operator(*args)
+        return operator.__class__.operator(*args, **operator.kwargs)
 
     # We vmap here rather than batch because matmul behaves differently depending on
     # the exact shapes.
