@@ -3,7 +3,7 @@ import ifnt
 from jax import numpy as jnp
 from jax.scipy.special import digamma
 from numpyro import distributions
-from typing import Any
+from typing import Any, Union
 from ..distributions import LinearDynamicalSystem, PrecisionNormal, Reshaped
 from ..nodes import AddOperator, DelayedValue, GetItemOperator, MatMulOperator
 from ..util import multidigamma
@@ -89,6 +89,8 @@ def _expect_delta(self: distributions.Delta, expr: Any = 1) -> jnp.ndarray:
         return jnp.linalg.slogdet(self.v).logabsdet
     elif expr == "exp":
         return jnp.exp(self.v)
+    elif callable(expr):
+        return expr(self.v)
     else:
         return _expect_distribution(self, expr)
 
@@ -136,6 +138,8 @@ def _expect_literal(self, expr=1):
         return jnp.linalg.slogdet(self).logabsdet
     elif expr == "exp":
         return jnp.exp(self)
+    elif callable(expr):
+        return expr(self)
     else:
         raise NotImplementedError(self, expr)
 
@@ -152,10 +156,20 @@ def _expect_reshaped(self: Reshaped, expr: Any = 1) -> jnp.ndarray:
 
 @expect.register(distributions.LowRankMultivariateNormal)
 @expect.register(distributions.MultivariateNormal)
-def _expect_multivariate_normal(self, expr: Any = 1) -> jnp.ndarray:
+def _expect_multivariate_normal(
+    self: Union[
+        distributions.LowRankMultivariateNormal, distributions.MultivariateNormal
+    ],
+    expr: Any = 1,
+) -> jnp.ndarray:
     if expr == "outer":
         return (
             self.mean[..., :, None] * self.mean[..., None, :] + self.covariance_matrix
+        )
+    if expr == "exp":
+        # https://en.wikipedia.org/wiki/Log-normal_distribution#Multivariate_log-normal
+        return jnp.exp(
+            self.loc + jnp.diagonal(self.covariance_matrix, axis1=-1, axis2=-2) / 2
         )
     else:
         return _expect_distribution(self, expr)

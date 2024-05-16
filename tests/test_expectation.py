@@ -29,7 +29,7 @@ DISTRIBUTION_CONFIGS = [
             rng.normal((3,)),
             distributions.Wishart(6, jnp.eye(3) / 10).sample(rng.get_key()),
         ),
-        (1, 2, "outer", "var"),
+        (1, 2, "outer", "var", "exp"),
     ),
     (
         distributions.Wishart(
