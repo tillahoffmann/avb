@@ -329,7 +329,7 @@ def batch_update(n_steps, unconstrained, state, *args, **kwargs):
 ```python
 atol = 1e-3
 batch_size = 10
-max_iter = 15_000
+max_iter = 25_000
 
 progress = tqdm(total=max_iter)
 progress.n = int(state.iter_num)
@@ -382,6 +382,7 @@ with progress:
 approximation = avb.approximation_from_unconstrained(unconstrained, aux)
 # Revalidate elbo at the optimized parameters.
 avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
+pass
 ```
 
 ```python
