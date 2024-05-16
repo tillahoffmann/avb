@@ -4,8 +4,8 @@ jax.config.update("jax_enable_x64", True)
 
 import avb
 from avb.distributions import (
-    PrecisionNormal, 
-    LinearDynamicalSystem, 
+    PrecisionNormal,
+    LinearDynamicalSystem,
     Reshaped,
 )
 from avb.util import tree_leaves_with_path
@@ -104,17 +104,33 @@ for column in id_columns:
 ```
 
 ```python
+holidays_url = "https://gist.githubusercontent.com/tillahoffmann/809742bfcc835c1968be455216e6eb45/raw/3f00e50fc532b6312ec9aedbaa27afffe0f1047d/historical-federal-holidays.csv"
+holidays = pd.read_csv(holidays_url, parse_dates=["date"])
+holidays = holidays[(raw.from_date.min() <= holidays.date) & (holidays.date <= raw.from_date.max())]
+
+holiday_weeks = {
+    holiday: [isoweek.Week.withdate(date).isoformat() for date in subset.date]
+    for holiday, subset in holidays.groupby("holiday")
+}
+```
+
+```python
 # Prepare the data.
 raw = raw[raw.number > 0]
 n_weeks = raw.isoweek_id.nunique()
 n_locs = raw.state_id.nunique()
 n_types = raw.disease_id.nunique()
-y = jnp.log1p(jnp.asarray(raw.number))
-y_scaler = preprocessing.StandardScaler()
-y = jnp.asarray(y_scaler.fit_transform(y[..., None])[..., 0])
 week_id = jnp.asarray(raw.isoweek_id)
 loc_id = jnp.asarray(raw.state_id)
 type_id = jnp.asarray(raw.disease_id)
+
+y = jnp.log1p(jnp.asarray(raw.number))
+y_scaler = preprocessing.StandardScaler()
+y = jnp.asarray(y_scaler.fit_transform(y[..., None])[..., 0])
+
+X = jnp.stack([np.in1d(raw.isoweek, values) for values in holiday_weeks.values()]).T.astype(float)
+X_scaler = preprocessing.StandardScaler()
+X = jnp.asarray(X_scaler.fit_transform(X))
 
 static_data = {
     "n_weeks": n_weeks,
@@ -126,13 +142,14 @@ dynamic_data = {
     "loc_id": loc_id,
     "type_id": type_id,
     "y": y,
+    "X": X,
 }
 data = static_data | dynamic_data
 y.size
 ```
 
 ```python
-def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id, y):
+def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id, X, y):
     # Priors for precision parameters of constant effects.
     precision_prior = avb.DelayedDistribution(dists.Gamma, 1, 1)
     tau_a = numpyro.sample("tau_a", precision_prior)
@@ -156,16 +173,26 @@ def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id,
     A = numpyro.sample("A", avb.DelayedDistribution(LinearDynamicalSystem, transition_matrix, tau_A, n_weeks))
     B = numpyro.sample("B", avb.DelayedDistribution(LinearDynamicalSystem, transition_matrix, tau_B, n_weeks))
 
+    # Fixed effects.
+    coef = numpyro.sample(
+        "coef",
+        avb.DelayedDistribution(
+            dists.MultivariateNormal,
+            jnp.zeros(X.shape[-1]),
+            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
+        ),
+    )
+
     # Observations.
     tau_y = numpyro.sample("tau_y", avb.DelayedDistribution(dists.Gamma, jnp.ones((n_locs, n_types)), 1))
     y = numpyro.sample(
-        "y", 
+        "y",
         avb.DelayedDistribution(
             PrecisionNormal,
-            loc=mu + a[loc_id] + b[type_id] + z[week_id, 0] + C[loc_id, type_id] 
-            + A[loc_id, week_id, 0] + B[type_id, week_id, 0],
+            loc=mu + a[loc_id] + b[type_id] + z[week_id, 0] + C[loc_id, type_id]
+            + A[loc_id, week_id, 0] + B[type_id, week_id, 0] + X @ coef,
             precision=tau_y[loc_id, type_id]
-        ), 
+        ),
         obs=y,
     )
 ```
@@ -177,42 +204,44 @@ rng = ifnt.random.JaxRandomState(17)
 
 dynamic_data["transition_matrix"] = data["transition_matrix"] = transition_matrix
 
-loc_scale = .1
+loc_scale = 0.01
+var_scale = 0.1
 prec_conc = 10
 prec_rate = 10
 
 approximation = {
-    "mu": PrecisionNormal(y.mean(), jnp.ones(())),
-    "a": PrecisionNormal(loc_scale * rng.normal((n_locs,)), jnp.ones(n_locs)),
-    "b": PrecisionNormal(loc_scale * rng.normal((n_types,)), jnp.ones(n_types)),
+    "mu": PrecisionNormal(loc_scale * rng.normal(()), var_scale * jnp.ones(())),
+    "a": PrecisionNormal(loc_scale * rng.normal((n_locs,)), var_scale * jnp.ones(n_locs)),
+    "b": PrecisionNormal(loc_scale * rng.normal((n_types,)), var_scale * jnp.ones(n_types)),
     "z": Reshaped(
         dists.LowRankMultivariateNormal(
-            loc_scale * rng.normal((n_weeks * p,)), 
-            loc_scale * rng.normal((n_weeks * p, int(jnp.sqrt(n_weeks * p)))), 
-            jnp.ones(n_weeks * p),
-        ), 
+            loc_scale * rng.normal((n_weeks * p,)),
+            loc_scale * rng.normal((n_weeks * p, int(jnp.sqrt(n_weeks * p)))),
+            var_scale * jnp.ones(n_weeks * p),
+        ),
         event_shape=(n_weeks, p),
     ),
     "A": Reshaped(
         dists.LowRankMultivariateNormal(
-            loc_scale * rng.normal((n_locs, n_weeks * p)), 
-            loc_scale * rng.normal((n_locs, n_weeks * p, int(jnp.sqrt(n_weeks * p)))), 
-            jnp.ones((n_locs, n_weeks * p)),
+            loc_scale * rng.normal((n_locs, n_weeks * p)),
+            loc_scale * rng.normal((n_locs, n_weeks * p, int(jnp.sqrt(n_weeks * p)))),
+            var_scale * jnp.ones((n_locs, n_weeks * p)),
         ),
         event_shape=(n_weeks, p),
     ),
     "B": Reshaped(
         dists.LowRankMultivariateNormal(
             loc_scale * rng.normal((n_types, n_weeks * p)),
-            loc_scale * rng.normal((n_types, n_weeks * p, int(jnp.sqrt(n_weeks * p)))), 
-            jnp.ones((n_types, n_weeks * p)),
+            loc_scale * rng.normal((n_types, n_weeks * p, int(jnp.sqrt(n_weeks * p)))),
+            var_scale * jnp.ones((n_types, n_weeks * p)),
         ),
         event_shape=(n_weeks, p),
     ),
     "C": PrecisionNormal(
-        loc_scale * rng.normal((n_locs, n_types)), 
-        jnp.ones((n_locs, n_types)),
+        loc_scale * rng.normal((n_locs, n_types)),
+        var_scale * jnp.ones((n_locs, n_types)),
     ),
+    "coef": PrecisionNormal(loc_scale * rng.normal((X.shape[-1],)), var_scale * jnp.ones(X.shape[-1])).to_event(1),
     "tau_a": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_b": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_z": dists.Wishart(prec_conc * p, jnp.eye(p)),
@@ -265,7 +294,6 @@ def batch_update(n_steps, unconstrained, state, *args, **kwargs):
     def _target(carry, _):
         unconstrained, state = optim.update(*carry, *args, **kwargs)
         return (unconstrained, state), state.value
-    
     carry, values = jax.lax.scan(_target, (unconstrained, state), jnp.arange(n_steps))
     return carry, values
 ```
@@ -273,10 +301,11 @@ def batch_update(n_steps, unconstrained, state, *args, **kwargs):
 ```python
 atol = 1e-3
 batch_size = 10
-max_iter = 20_000
+max_iter = 10_000
 
 progress = tqdm(total=max_iter)
 progress.n = int(state.iter_num)
+print(f"starting from iteration {progress.n}")
 with progress:
     while state.iter_num < max_iter:
         (unconstrained, state), values = batch_update(batch_size, unconstrained, state, **dynamic_data)
@@ -294,14 +323,13 @@ with progress:
         # Report the largest steps for each block.
         max_steps = jax.tree.map(lambda x: max(x.min(), x.max(), key=abs), state.s_history)
         max_steps = tree_leaves_with_path(max_steps, sep="/")
-        
         for key, value in max_steps:
             writer.add_scalar(f"{key}/step", value, global_step=state.iter_num)
 
         # Report the fraction where the step is negligible but the gradient is not.
         frac = jax.tree.map(
-            lambda s, g: jnp.mean((jnp.abs(s).max(axis=0) < 1e-9)[jnp.abs(g) > 1e-9]), 
-            state.s_history, 
+            lambda s, g: jnp.mean((jnp.abs(s).max(axis=0) < 1e-9)[jnp.abs(g) > 1e-9]),
+            state.s_history,
             state.grad,
         )
         for key, value in tree_leaves_with_path(frac, sep="/"):
@@ -311,10 +339,10 @@ with progress:
         max_grad_key, max_grad = max(max_grads, key=lambda x: abs(x[1]))
         if abs(max_grad) < atol:
             break
-    
+
         progress.update(batch_size)
         progress.set_description("; ".join([
-            f"max(grad)={max_grad:.3g} ({max_grad_key})", 
+            f"max(grad)={max_grad:.3g} ({max_grad_key})",
             f"error={state.error:.3g}",
             f"value={values[-1]:.2f}",
         ]))
@@ -332,7 +360,7 @@ fig, axes = plt.subplots(2, 1, sharex=True)
 ax = axes[0]
 loc = approximation["z"].mean[..., 0]
 scale = jnp.sqrt(approximation["z"].variance[..., 0])
-line, = ax.plot(mondays, loc)
+line, = ax.plot(mondays, loc, marker=".", markersize=5)
 ax.fill_between(mondays, loc - scale, loc + scale, color=line.get_color(), alpha=0.2)
 
 ax = axes[1]
@@ -341,6 +369,11 @@ loc = approximation["B"].mean[idx, ..., 0]
 scale = jnp.sqrt(approximation["B"].variance[idx, ..., 0])
 line, = ax.plot(mondays, loc)
 ax.fill_between(mondays, loc - scale, loc + scale, color=line.get_color(), alpha=0.2)
+
+for ax in axes:
+    for key, weeks in holiday_weeks.items():
+        for week in weeks:
+            ax.axvline(isoweek.Week.fromstring(week).monday(), color="silver", ls=":")
 ```
 
 ```python
@@ -387,4 +420,9 @@ ax.set_aspect("equal")
 mm = y.min(), y.max()
 ax.plot(mm, mm, color="silver", ls="--")
 metrics.r2_score(y, prediction)
+```
+
+```python
+residuals = (y - prediction) / approximation["tau_y"].mean[loc_id, type_id]
+plt.hist(residuals, density=True, bins=25, range=(-2, 2))
 ```
