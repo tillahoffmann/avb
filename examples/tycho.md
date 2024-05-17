@@ -26,6 +26,9 @@ from sklearn import metrics, preprocessing
 import shutil
 import tensorboardX
 from tqdm.notebook import tqdm
+
+%reload_ext snakeviz
+%reload_ext line_profiler
 ```
 
 Load the raw data. We only consider case data aggregated by US state from the last three and a half years. We filter out diseases with very low number of records and US territories. Observation weeks start on Sundays (which we verify), and we record the ISO week of the following Monday as an identifier (rather than using the `epi_week` field provided by the dataset). That makes it easier to map onto holidays, for example.
@@ -299,6 +302,10 @@ loss_fn = jax.jit(
     )
 )
 loss_fn(unconstrained, **dynamic_data)
+```
+
+```python
+%snakeviz avb.infer.elbo_loss_from_unconstrained(model, aux)(unconstrained, **static_data, **dynamic_data)
 ```
 
 ```python
