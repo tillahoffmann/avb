@@ -1,3 +1,4 @@
+import jax
 from jax import numpy as jnp
 from jax.scipy import special
 import numbers
@@ -37,3 +38,10 @@ def get_shape(x) -> tuple:
         return x.shape()
     else:
         return x.shape
+
+
+def tree_leaves_with_path(tree, is_leaf=None, sep=None) -> list:
+    leaves = jax.tree_util.tree_leaves_with_path(tree, is_leaf)
+    if not sep:
+        return leaves
+    return [("/".join(key.key for key in keys), leaf) for keys, leaf in leaves]

@@ -272,7 +272,7 @@ numpy==1.26.4
     #   scipy
     #   tensorboard
     #   tensorboardx
-numpyro @ git+https://github.com/tillahoffmann/numpyro@wishart
+numpyro @ git+https://github.com/tillahoffmann/numpyro
     # via avb
 opt-einsum==3.3.0
     # via jax
