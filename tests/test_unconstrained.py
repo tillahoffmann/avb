@@ -14,7 +14,6 @@ rng = ifnt.random.JaxRandomState(43)
     [
         distributions.Gamma(rng.gamma(5, (13, 4)), rng.gamma(7, (4,))),
         avb.distributions.PrecisionNormal(rng.normal((7,)), rng.gamma(7, (7,))),
-        distributions.Normal(rng.normal((7,)), rng.gamma(7, (7,))),
         distributions.LowRankMultivariateNormal(
             rng.normal((7, 4)), rng.normal((7, 4, 5)), rng.gamma(5, (7, 4))
         ),
@@ -26,6 +25,7 @@ rng = ifnt.random.JaxRandomState(43)
             event_shape=(6, 2),
         ),
         distributions.Wishart(9, jnp.eye(3)),
+        distributions.Normal(rng.normal((7,)), rng.gamma(7, (7,))),
     ],
 )
 def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
