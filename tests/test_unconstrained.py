@@ -14,6 +14,7 @@ rng = ifnt.random.JaxRandomState(43)
     [
         distributions.Gamma(rng.gamma(5, (13, 4)), rng.gamma(7, (4,))),
         avb.distributions.PrecisionNormal(rng.normal((7,)), rng.gamma(7, (7,))),
+        distributions.Normal(rng.normal((7,)), rng.gamma(7, (7,))),
         distributions.LowRankMultivariateNormal(
             rng.normal((7, 4)), rng.normal((7, 4, 5)), rng.gamma(5, (7, 4))
         ),

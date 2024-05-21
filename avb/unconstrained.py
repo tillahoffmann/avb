@@ -24,6 +24,14 @@ def _to_params_precision_normal(self: PrecisionNormal):
 
 
 @to_params.register
+def _to_params_normal(self: distributions.Normal):
+    return {
+        "loc": self.loc,
+        "scale": self.scale,
+    }, {"cls": self.__class__}
+
+
+@to_params.register
 def _to_params_gamma(self: distributions.Gamma):
     return {
         "rate": self.rate,
