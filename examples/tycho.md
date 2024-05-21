@@ -177,29 +177,20 @@ def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id,
     B = numpyro.sample("B", avb.DelayedDistribution(LinearDynamicalSystem, transition_matrix, tau_B, n_weeks))
 
     # Fixed effects.
+    precision_prior = avb.DelayedDistribution(dists.Gamma, jnp.ones(X.shape[-1]), 1)
+    tau_coef_loc = numpyro.sample("tau_coef_loc", precision_prior)
+    tau_coef_type = numpyro.sample("tau_coef_type", precision_prior)
     coef = numpyro.sample(
         "coef",
-        avb.DelayedDistribution(
-            dists.MultivariateNormal,
-            jnp.zeros(X.shape[-1]),
-            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
-        ),
+        avb.DelayedDistribution(PrecisionNormal, 0, 1e-8 * jnp.ones(X.shape[-1])),
     )
     coef_loc = numpyro.sample(
         "coef_loc",
-        avb.DelayedDistribution(
-            dists.MultivariateNormal,
-            jnp.zeros((n_locs, X.shape[-1])),
-            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
-        ),
+        avb.DelayedDistribution(PrecisionNormal, jnp.zeros((n_locs, X.shape[-1])), tau_coef_loc),
     )
     coef_type = numpyro.sample(
         "coef_type",
-        avb.DelayedDistribution(
-            dists.MultivariateNormal,
-            jnp.zeros((n_types, X.shape[-1])),
-            precision_matrix=1e-8 * jnp.eye(X.shape[-1]),
-        ),
+        avb.DelayedDistribution(PrecisionNormal, jnp.zeros((n_types, X.shape[-1])), tau_coef_type),
     )
 
     # Observations.
@@ -225,14 +216,14 @@ rng = ifnt.random.JaxRandomState(17)
 dynamic_data["transition_matrix"] = data["transition_matrix"] = transition_matrix
 
 loc_scale = 0.01
-var_scale = 0.01
+var_scale = 0.1
 prec_conc = 10
 prec_rate = 10
 
 approximation = {
-    "mu": PrecisionNormal(loc_scale * rng.normal(()), var_scale * jnp.ones(())),
-    "a": PrecisionNormal(loc_scale * rng.normal((n_locs,)), var_scale * jnp.ones(n_locs)),
-    "b": PrecisionNormal(loc_scale * rng.normal((n_types,)), var_scale * jnp.ones(n_types)),
+    "mu": dists.Normal(loc_scale * rng.normal(()), jnp.ones(()) * var_scale),
+    "a": dists.Normal(loc_scale * rng.normal((n_locs,)), np.ones(n_locs) * var_scale),
+    "b": dists.Normal(loc_scale * rng.normal((n_types,)), jnp.ones(n_types) * var_scale),
     "z": Reshaped(
         dists.LowRankMultivariateNormal(
             loc_scale * rng.normal((n_weeks * p,)),
@@ -257,22 +248,24 @@ approximation = {
         ),
         event_shape=(n_weeks, p),
     ),
-    "C": PrecisionNormal(
+    "C": dists.Normal(
         loc_scale * rng.normal((n_locs, n_types)),
-        var_scale * jnp.ones((n_locs, n_types)),
+        jnp.ones((n_locs, n_types)) * var_scale,
     ),
-    "coef": PrecisionNormal(
+    "coef": dists.Normal(
         loc_scale * rng.normal((X.shape[-1],)), 
-        var_scale * jnp.ones(X.shape[-1]),
-    ).to_event(1),
-    "coef_loc": PrecisionNormal(
+        jnp.ones(X.shape[-1]) * var_scale,
+    ),
+    "coef_loc": dists.Normal(
         loc_scale * rng.normal((n_locs, X.shape[-1])), 
-        var_scale * jnp.ones((n_locs, X.shape[-1])),
-    ).to_event(1),
-    "coef_type": PrecisionNormal(
+        jnp.ones((n_locs, X.shape[-1])) * var_scale,
+    ),
+    "coef_type": dists.Normal(
         loc_scale * rng.normal((n_types, X.shape[-1])), 
-        var_scale * jnp.ones((n_types, X.shape[-1])),
-    ).to_event(1),
+        jnp.ones((n_types, X.shape[-1])) * var_scale,
+    ),
+    "tau_coef_loc": dists.Gamma(prec_conc * jnp.ones(X.shape[-1]), prec_rate * jnp.ones(X.shape[-1])),
+    "tau_coef_type": dists.Gamma(prec_conc * jnp.ones(X.shape[-1]), prec_rate * jnp.ones(X.shape[-1])),
     "tau_a": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_b": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
     "tau_z": dists.Wishart(prec_conc * p, jnp.eye(p)),
