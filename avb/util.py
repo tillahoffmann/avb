@@ -70,3 +70,14 @@ def precondition_diagonal(func, scales):
         return func(x, *args, **kwargs)
 
     return _precondition_diagonal_wrapper
+
+
+def hessian_diagonal_finite_diff(func, x, *args, eps=1e-6, **kwargs):
+    """
+    Compute the diagonal Hessian using symmetric finite difference of the autodiff grad.
+    """
+
+    grad = jax.grad(func)
+    grad1 = grad(jax.tree.map(lambda x: x - eps, x), *args, **kwargs)
+    grad2 = grad(jax.tree.map(lambda x: x + eps, x), *args, **kwargs)
+    return jax.tree.map(lambda x, y: (y - x) / (2 * eps), grad1, grad2)
