@@ -61,6 +61,8 @@ chex==0.1.86
     # via optax
 click==8.1.7
     # via black
+collectiontools==0.1.0
+    # via -r requirements.in
 comm==0.2.2
     # via
     #   ipykernel
