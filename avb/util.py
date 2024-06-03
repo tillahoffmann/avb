@@ -45,3 +45,45 @@ def tree_leaves_with_path(tree, is_leaf=None, sep=None) -> list:
     if not sep:
         return leaves
     return [("/".join(key.key for key in keys), leaf) for keys, leaf in leaves]
+
+
+def apply_scale(x, scales, strict: bool = False):
+    """
+    Scale all values in `x` by factors in `scales` if a corresponding element exists. If
+    `strict`, the pytrees of `x` and `scales` must match exactly.
+    """
+    if strict:
+        return jax.tree.map(lambda x, y: x * y, x, scales)
+    else:
+        # Flatten the scales so we can look them up.
+        flat_scales, _ = jax.tree_util.tree_flatten_with_path(scales)
+        flat_scales = dict(flat_scales)
+        return jax.tree_util.tree_map_with_path(
+            lambda key, value: (
+                (flat_scales[key] * value) if key in flat_scales else value
+            ),
+            x,
+        )
+
+
+def precondition_diagonal(func, scales, strict: bool = False):
+    """
+    Precondition a function by scaling its first argument.
+    """
+
+    def _precondition_diagonal_wrapper(x, *args, **kwargs):
+        x = apply_scale(x, scales, strict=strict)
+        return func(x, *args, **kwargs)
+
+    return _precondition_diagonal_wrapper
+
+
+def hessian_diagonal_finite_diff(func, x, *args, eps=1e-6, **kwargs):
+    """
+    Compute the diagonal Hessian using symmetric finite difference of the autodiff grad.
+    """
+
+    grad = jax.grad(func)
+    grad1 = grad(jax.tree.map(lambda x: x - eps, x), *args, **kwargs)
+    grad2 = grad(jax.tree.map(lambda x: x + eps, x), *args, **kwargs)
+    return jax.tree.map(lambda x, y: (y - x) / (2 * eps), grad1, grad2)

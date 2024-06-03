@@ -46,9 +46,9 @@ DISTRIBUTION_CONFIGS = [
     ),
     (
         avb.distributions.LinearDynamicalSystem(
-            rng.normal((3, 3)),
-            distributions.Wishart(10, jnp.eye(3) / 10).sample(rng.get_key()),
-            5,
+            rng.normal((2, 2)),
+            distributions.Wishart(10, jnp.eye(2) / 10).sample(rng.get_key()),
+            4,
         ),
         (1, 2, "outer", "var"),
     ),
