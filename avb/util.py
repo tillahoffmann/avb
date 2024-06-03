@@ -47,26 +47,32 @@ def tree_leaves_with_path(tree, is_leaf=None, sep=None) -> list:
     return [("/".join(key.key for key in keys), leaf) for keys, leaf in leaves]
 
 
-def apply_scale(x, scales):
+def apply_scale(x, scales, strict: bool = False):
     """
-    Scale all values in `x` by factors in `scales` if a corresponding element exists.
+    Scale all values in `x` by factors in `scales` if a corresponding element exists. If
+    `strict`, the pytrees of `x` and `scales` must match exactly.
     """
-    # Flatten the scales so we can look them up.
-    flat_scales, _ = jax.tree_util.tree_flatten_with_path(scales)
-    flat_scales = dict(flat_scales)
-    return jax.tree_util.tree_map_with_path(
-        lambda key, value: (flat_scales[key] * value) if key in flat_scales else value,
-        x,
-    )
+    if strict:
+        return jax.tree.map(lambda x, y: x * y, x, scales)
+    else:
+        # Flatten the scales so we can look them up.
+        flat_scales, _ = jax.tree_util.tree_flatten_with_path(scales)
+        flat_scales = dict(flat_scales)
+        return jax.tree_util.tree_map_with_path(
+            lambda key, value: (
+                (flat_scales[key] * value) if key in flat_scales else value
+            ),
+            x,
+        )
 
 
-def precondition_diagonal(func, scales):
+def precondition_diagonal(func, scales, strict: bool = False):
     """
     Precondition a function by scaling its first argument.
     """
 
     def _precondition_diagonal_wrapper(x, *args, **kwargs):
-        x = apply_scale(x, scales)
+        x = apply_scale(x, scales, strict=strict)
         return func(x, *args, **kwargs)
 
     return _precondition_diagonal_wrapper

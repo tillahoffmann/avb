@@ -14,6 +14,7 @@ import functools
 import ifnt
 import isoweek
 from jax import numpy as jnp
+jnp.set_printoptions(threshold=20)
 import jaxopt
 from localscope import localscope
 from matplotlib import pyplot as plt
@@ -200,7 +201,7 @@ def model(transition_matrix, n_locs, n_types, n_weeks, loc_id, type_id, week_id,
         avb.DelayedDistribution(
             PrecisionNormal,
             loc=mu + a[loc_id] + b[type_id] + z[week_id, 0] + C[loc_id, type_id]
-            + A[loc_id, week_id, 0] + B[type_id, week_id, 0] 
+            + A[loc_id, week_id, 0] + B[type_id, week_id, 0]
             + (X * (coef + coef_loc[loc_id] + coef_type[type_id])).sum(axis=-1),
             precision=tau_y[loc_id, type_id]
         ),
@@ -253,15 +254,15 @@ approximation = {
         jnp.ones((n_locs, n_types)) * var_scale,
     ),
     "coef": dists.Normal(
-        loc_scale * rng.normal((X.shape[-1],)), 
+        loc_scale * rng.normal((X.shape[-1],)),
         jnp.ones(X.shape[-1]) * var_scale,
     ),
     "coef_loc": dists.Normal(
-        loc_scale * rng.normal((n_locs, X.shape[-1])), 
+        loc_scale * rng.normal((n_locs, X.shape[-1])),
         jnp.ones((n_locs, X.shape[-1])) * var_scale,
     ),
     "coef_type": dists.Normal(
-        loc_scale * rng.normal((n_types, X.shape[-1])), 
+        loc_scale * rng.normal((n_types, X.shape[-1])),
         jnp.ones((n_types, X.shape[-1])) * var_scale,
     ),
     "tau_coef_loc": dists.Gamma(prec_conc * jnp.ones(X.shape[-1]), prec_rate * jnp.ones(X.shape[-1])),
@@ -281,20 +282,96 @@ masks = {
     "B": jnp.zeros((n_types, n_weeks)).at[type_id, week_id].add(1) > 0,
     "C": jnp.zeros((n_locs, n_types)).at[loc_id, type_id].add(1) > 0,
 }
+
+# Validate the evidence lower bound is consistent with a monte carlo estimate.
+_, initial_elbo = avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
 ```
 
 ```python
-# Validate the evidence lower bound is consistent with a monte carlo estimate.
-avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
-# Get unconstrained and auxiliary data for optimization.
+# Get unconstrained and auxiliary data for optimization. We then precondition using the
+# number of times a particular variable will appear in the log joint distribution to
+# bring parameters roughly onto the same scale.
 unconstrained, aux = avb.approximation_to_unconstrained(approximation)
+
+term_counts = {
+    "mu": {
+        "loc": y.size,
+    },
+    "coef": {
+        "loc": y.size,
+    },
+    "coef_loc": {
+        "loc": jnp.ones(n_locs).at[loc_id].add(1)[..., None],
+    },
+    "coef_type": {
+        "loc": jnp.ones(n_types).at[type_id].add(1)[..., None],
+    },
+    "a": {
+        "loc": jnp.ones(n_locs).at[loc_id].add(1),
+    },
+    "b": {
+        "loc": jnp.ones(n_types).at[type_id].add(1),
+    },
+    "C": {
+        "loc": jnp.ones((n_locs, n_types)).at[loc_id, type_id].add(1),
+    },
+    "z": {
+        "base": {
+            "loc": jnp.ones(2 * n_weeks).at[2 * week_id].add(1),
+            "cov_factor": jnp.ones(2 * n_weeks).at[2 * week_id].add(1)[..., None],
+        },
+    },
+    "A": {
+        "base": {
+            "loc": jnp.ones((n_locs, 2 * n_weeks)).at[loc_id, 2 * week_id].add(1),
+            "cov_factor": jnp.ones((n_locs, 2 * n_weeks)).at[loc_id, 2 * week_id].add(1)[..., None],
+        }
+    },
+    "B": {
+        "base": {
+            "loc": jnp.ones((n_types, 2 * n_weeks)).at[type_id, 2 * week_id].add(1),
+            "cov_factor": jnp.ones((n_types, 2 * n_weeks)).at[type_id, 2 * week_id].add(1)[..., None],
+        }
+    },
+    "tau_z": {
+        "concentration": n_weeks,
+        "rate_matrix": n_weeks,
+    },
+    "tau_A": {
+        "concentration": n_weeks,
+        "rate_matrix": n_weeks,
+    },
+    "tau_B": {
+        "concentration": n_weeks,
+        "rate_matrix": n_weeks,
+    },
+    "tau_a": {
+        "concentration": n_locs,
+        "rate": n_locs,
+    },
+    "tau_b": {
+        "concentration": n_types,
+        "rate": n_types,
+    },
+    "tau_C": {
+        "concentration": n_locs * n_types,
+        "rate": n_locs * n_types,
+    }
+}
+inverse_scales = jax.tree.map(lambda x: jnp.sqrt(x), term_counts)
+scales = jax.tree.map(lambda x: 1 / x, inverse_scales)
+
 loss_fn = jax.jit(
-    functools.partial(
-        avb.infer.elbo_loss_from_unconstrained(model, aux),
-        **static_data,
-    )
+    avb.util.precondition_diagonal(
+        functools.partial(
+            avb.infer.elbo_loss_from_unconstrained(model, aux),
+            **static_data,
+        ),
+        scales,
+    ),
 )
-loss_fn(unconstrained, **dynamic_data)
+unconstrained = avb.util.apply_scale(unconstrained, inverse_scales)
+loss_fn(unconstrained, **dynamic_data) - initial_elbo
 ```
 
 ```python
@@ -302,7 +379,6 @@ loss_fn(unconstrained, **dynamic_data)
 ```
 
 ```python
-# Initialize the optimizer and run one optimization step to compile.
 optim = jaxopt.LBFGS(loss_fn)
 state = optim.init_state(unconstrained, **dynamic_data)
 update = jax.jit(optim.update)
@@ -327,19 +403,23 @@ def batch_update(n_steps, unconstrained, state, *args, **kwargs):
 ```
 
 ```python
-atol = 1e-3
+gtol = 1e-3
+atol = 1e-6
 batch_size = 10
-max_iter = 25_000
+max_iter = 20_000
 
 progress = tqdm(total=max_iter)
 progress.n = int(state.iter_num)
 print(f"starting from iteration {progress.n}")
 with progress:
     while state.iter_num < max_iter:
+        start_value = state.value
         (unconstrained, state), values = batch_update(batch_size, unconstrained, state, **dynamic_data)
+        delta = start_value - values[-1]
 
         writer.add_scalar("optim/value", values[-1], global_step=state.iter_num)
         writer.add_scalar("optim/error", state.error, global_step=state.iter_num)
+        writer.add_scalar("optim/delta", delta, global_step=state.iter_num)
 
         # Report the largest gradients for each block.
         max_grads = jax.tree.map(lambda x: max(x.min(), x.max(), key=abs), state.grad)
@@ -348,38 +428,95 @@ with progress:
         for key, value in max_grads:
             writer.add_scalar(f"{key}/grad", value, global_step=state.iter_num)
 
-        # Report the largest steps for each block.
+        # Report the largest steps and gradients for each block.
         max_steps = jax.tree.map(lambda x: max(x.min(), x.max(), key=abs), state.s_history)
         max_steps = tree_leaves_with_path(max_steps, sep="/")
         for key, value in max_steps:
             writer.add_scalar(f"{key}/step", value, global_step=state.iter_num)
-
-        # Report the fraction where the step is negligible but the gradient is not.
-        frac = jax.tree.map(
-            lambda s, g: jnp.mean((jnp.abs(s).max(axis=0) < 1e-9)[jnp.abs(g) > 1e-9]),
-            state.s_history,
-            state.grad,
-        )
-        for key, value in tree_leaves_with_path(frac, sep="/"):
-            writer.add_scalar(f"{key}/zero-step-frac", value, global_step=state.iter_num)
-
-        # Check convergence.
         max_grad_key, max_grad = max(max_grads, key=lambda x: abs(x[1]))
-        if abs(max_grad) < atol:
-            break
 
         progress.update(batch_size)
         progress.set_description("; ".join([
             f"max(grad)={max_grad:.3g} ({max_grad_key})",
             f"error={state.error:.3g}",
             f"value={values[-1]:.2f}",
+            f"delta={delta:.3g}",
         ]))
+
+        # Report the means of all location parameters.
+        for path, value in jax.tree_util.tree_leaves_with_path(unconstrained):
+            if path[-1].key != "loc":
+                continue
+            path = [x.key for x in path] + ["mean"]
+            writer.add_scalar("/".join(path), value.mean(), global_step=state.iter_num)
+
+        # Check convergence.
+        if state.error < gtol or abs(delta) < atol:
+            break
+```
+
+```python
+def with_path_update(func, x, path):
+    def _wrapper(__y, *args, **kwargs):
+        x2 = jax.tree_util.tree_map_with_path(lambda key, value: __y if path == key else value, x)
+        return func(x2, *args, **kwargs)
+
+    return _wrapper
+
+
+def tree_get(tree, path):
+    for key in path:
+        tree = tree[key]
+    return tree
+```
+
+```python
+keys = [
+    ("mu", "loc"),
+    ("mu", "scale"),
+    ("a", "loc"),
+    ("a", "scale"),
+    ("b", "loc"),
+    ("C", "loc"),
+    ("z", "base", "loc"),
+    ("z", "base", "cov_diag"),
+    ("z", "base", "cov_factor"),
+    ("tau_z", "concentration"),
+    ("tau_z", "rate_matrix"),
+    ("tau_A", "concentration"),
+    ("tau_A", "rate_matrix"),
+    ("tau_B", "concentration"),
+    ("tau_B", "rate_matrix"),
+    ("tau_C", "concentration"),
+    ("tau_C", "rate"),
+    ("tau_y", "concentration"),
+    ("tau_y", "rate"),
+    ("tau_a", "concentration"),
+    ("tau_a", "rate"),
+    ("tau_b", "concentration"),
+    ("tau_b", "rate"),
+    # ("A", "base", "loc"),
+    # ("B", "base", "loc"),
+]
+hessdiags = {}
+for key in keys:
+    f = with_path_update(optim.fun, unconstrained, tuple(jax.tree_util.DictKey(x) for x in key))
+    hessian = jax.jacfwd(jax.jacrev(f))(tree_get(unconstrained, key), **dynamic_data)
+    shape = hessian.shape[:hessian.ndim // 2]
+    size = np.prod(shape) if shape else 1
+    hessdiag = jnp.diagonal(hessian.reshape((size, size))).reshape(shape)
+    hessdiags[key] = hessdiag
+    print(key, shape, hessdiag.max(), hessdiag.min())
 ```
 
 # Results
 
 ```python
-approximation = avb.approximation_from_unconstrained(unconstrained, aux)
+approximation = avb.approximation_from_unconstrained(
+    avb.util.apply_scale(unconstrained, scales),
+    aux,
+)
+print(f"expected mu: {approximation['mu'].mean}")
 # Revalidate elbo at the optimized parameters.
 avb.infer.validate_elbo(model, approximation, 100)(jax.random.key(13), **data)
 pass
@@ -445,8 +582,8 @@ prediction = (
     + approximation["B"].mean[type_id, week_id, 0]
     + approximation["C"].mean[loc_id, type_id]
     + (X * (
-        approximation["coef"].mean 
-        + approximation["coef_loc"].mean[loc_id] 
+        approximation["coef"].mean
+        + approximation["coef_loc"].mean[loc_id]
         + approximation["coef_type"].mean[type_id]
     )).sum(axis=-1)
 )
