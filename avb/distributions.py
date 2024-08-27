@@ -29,6 +29,8 @@ class LocScaleGamma(distributions.Gamma):
     }
 
     def __init__(self, loc, scale, *, validate_args=None):
+        self.loc = loc
+        self.scale = scale
         concentration = (loc / scale) ** 2
         rate = loc / scale**2
         super().__init__(concentration, rate, validate_args=validate_args)
