@@ -1,6 +1,7 @@
 import avb
 import ifnt
 from jax import numpy as jnp
+import numpy as np
 from numpyro import distributions
 
 
@@ -42,3 +43,15 @@ def test_linear_dynamical_system_log_prob() -> None:
     ).to_event(1)
     other_log_prob = other_dist.log_prob(x)
     ifnt.testing.assert_allclose(log_prob, other_log_prob, rtol=1e-5)
+
+
+def test_precision_normal() -> None:
+    dist = avb.distributions.PrecisionNormal(3, 2)
+    np.testing.assert_allclose(dist.mean, 3)
+    np.testing.assert_allclose(dist.variance, 0.5)
+
+
+def test_loc_scale_gamma() -> None:
+    dist = avb.distributions.LocScaleGamma(3, 4)
+    np.testing.assert_allclose(dist.mean, 3)
+    np.testing.assert_allclose(dist.variance, 16)
