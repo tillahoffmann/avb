@@ -6,6 +6,7 @@ import avb
 from avb.distributions import (
     PrecisionNormal,
     LinearDynamicalSystem,
+    LocScaleGamma,
     Reshaped,
 )
 from avb.util import tree_leaves_with_path
@@ -265,15 +266,15 @@ approximation = {
         loc_scale * rng.normal((n_types, X.shape[-1])),
         jnp.ones((n_types, X.shape[-1])) * var_scale,
     ),
-    "tau_coef_loc": dists.Gamma(prec_conc * jnp.ones(X.shape[-1]), prec_rate * jnp.ones(X.shape[-1])),
-    "tau_coef_type": dists.Gamma(prec_conc * jnp.ones(X.shape[-1]), prec_rate * jnp.ones(X.shape[-1])),
-    "tau_a": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
-    "tau_b": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
+    "tau_coef_loc": LocScaleGamma(loc_scale * jnp.ones(X.shape[-1]), var_scale * jnp.ones(X.shape[-1])),
+    "tau_coef_type": LocScaleGamma(loc_scale * jnp.ones(X.shape[-1]), var_scale * jnp.ones(X.shape[-1])),
+    "tau_a": LocScaleGamma(loc_scale * jnp.ones(()), var_scale * jnp.ones(())),
+    "tau_b": LocScaleGamma(loc_scale * jnp.ones(()), var_scale * jnp.ones(())),
     "tau_z": dists.Wishart(prec_conc * p, jnp.eye(p)),
     "tau_A": dists.Wishart(prec_conc * jnp.ones(n_locs) * p, jnp.ones((n_locs, 1, 1)) * jnp.eye(p) / prec_rate),
     "tau_B": dists.Wishart(prec_conc * jnp.ones(n_types) * p, jnp.ones((n_types, 1, 1)) * jnp.eye(p) / prec_rate),
-    "tau_C": dists.Gamma(prec_conc * jnp.ones(()), prec_rate * jnp.ones(())),
-    "tau_y": dists.Gamma(prec_conc * jnp.ones((n_locs, n_types)), prec_rate * jnp.ones((n_locs, n_types))),
+    "tau_C": LocScaleGamma(loc_scale * jnp.ones(()), var_scale * jnp.ones(())),
+    "tau_y": LocScaleGamma(loc_scale * jnp.ones((n_locs, n_types)), var_scale * jnp.ones((n_locs, n_types))),
 }
 
 # Obtain masks for values that have been observed at least once.
@@ -346,17 +347,20 @@ term_counts = {
         "rate_matrix": n_weeks,
     },
     "tau_a": {
-        "concentration": n_locs,
-        "rate": n_locs,
+        "loc": n_locs,
     },
     "tau_b": {
-        "concentration": n_types,
-        "rate": n_types,
+        "loc": n_types,
     },
     "tau_C": {
-        "concentration": n_locs * n_types,
-        "rate": n_locs * n_types,
-    }
+        "loc": n_locs * n_types,
+    },
+    "tau_coef_loc": {
+        "loc": n_locs,
+    },
+    "tau_coef_type": {
+        "loc": n_types,
+    },
 }
 inverse_scales = jax.tree.map(lambda x: jnp.sqrt(x), term_counts)
 scales = jax.tree.map(lambda x: 1 / x, inverse_scales)
@@ -487,14 +491,18 @@ keys = [
     ("tau_A", "rate_matrix"),
     ("tau_B", "concentration"),
     ("tau_B", "rate_matrix"),
-    ("tau_C", "concentration"),
-    ("tau_C", "rate"),
-    ("tau_y", "concentration"),
-    ("tau_y", "rate"),
-    ("tau_a", "concentration"),
-    ("tau_a", "rate"),
-    ("tau_b", "concentration"),
-    ("tau_b", "rate"),
+    ("tau_C", "loc"),
+    ("tau_C", "scale"),
+    ("tau_y", "loc"),
+    ("tau_y", "scale"),
+    ("tau_a", "loc"),
+    ("tau_a", "scale"),
+    ("tau_b", "loc"),
+    ("tau_b", "scale"),
+    ("tau_coef_loc", "loc"),
+    ("tau_coef_loc", "scale"),
+    ("tau_coef_type", "loc"),
+    ("tau_coef_type", "scale"),
     # ("A", "base", "loc"),
     # ("B", "base", "loc"),
 ]

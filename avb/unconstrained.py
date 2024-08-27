@@ -3,7 +3,7 @@ import math
 from numpyro import distributions
 from typing import Dict, Tuple
 from .dispatch import valuedispatch
-from .distributions import PrecisionNormal, Reshaped
+from .distributions import LocScaleGamma, PrecisionNormal, Reshaped
 
 
 @functools.singledispatch
@@ -36,6 +36,14 @@ def _to_params_gamma(self: distributions.Gamma):
     return {
         "rate": self.rate,
         "concentration": self.concentration,
+    }, {"cls": self.__class__}
+
+
+@to_params.register
+def _to_params_loc_scale_gamma(self: LocScaleGamma):
+    return {
+        "loc": self.loc,
+        "scale": self.scale,
     }, {"cls": self.__class__}
 
 

@@ -26,6 +26,7 @@ rng = ifnt.random.JaxRandomState(43)
         ),
         distributions.Wishart(9, jnp.eye(3)),
         distributions.Normal(rng.normal((7,)), rng.gamma(7, (7,))),
+        avb.distributions.LocScaleGamma(*rng.gamma(7, (2, 7))),
     ],
 )
 def test_unconstrained_round_trip(dist: distributions.Distribution) -> None:
